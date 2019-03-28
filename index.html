@@ -27,6 +27,8 @@
       '//cdn.jsdelivr.net/npm/bluebird@3.5.3/js/browser/bluebird.min.js'
     )
   }
+  var href = window.location.href
+  window.SUGLY_HOME = href.substring(0, href.lastIndexOf('/'))
   insertScript('sugly.js')
 })())
 </script>
