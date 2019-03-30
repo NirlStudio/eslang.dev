@@ -349,7 +349,9 @@ module.exports = function ($void) {
 
   var proxy = axios.create({
     timeout: 30000,
-    responseType: 'text'
+    transformResponse: undefined,
+    responseType: 'text',
+    keepAlive: 'timeout=10, max=1000'
   })
 
   return {
@@ -764,13 +766,14 @@ module.exports = function ($void, reader, proc) {
     interpret('(run "tools/version")\n')
 
     // expose local loader cache.
+    var $shell = $void.$shell = {}
     printf('# shell object', 'gray'); printf(' .loader', 'yellow')
-    $['.loader'] = $void.loader.cache.store
+    $shell['.loader'] = $void.loader.cache.store
 
     printf(', and', 'gray')
     printf(' functions', 'gray'); printf(' .echo', 'blue')
     //  toggle on/of the printing of evaluaion result.
-    $['.echo'] = function echo () {
+    $shell['.echo'] = function echo () {
       echoing = !echoing
       if (echoing) {
         return true
@@ -781,7 +784,7 @@ module.exports = function ($void, reader, proc) {
 
     printf(',', 'gray'); printf(' .debug', 'blue')
     //  display, enable or disable debug output.
-    $['.debug'] = function debug (enabled) {
+    $shell['.debug'] = function debug (enabled) {
       var isDebugging = $void.env('is-debugging')
       return typeof enabled === 'undefined' ? isDebugging
         : $void.env('is-debugging',
@@ -791,7 +794,7 @@ module.exports = function ($void, reader, proc) {
 
     printf(' and', 'gray'); printf(' .logging', 'blue')
     //  display or update logging level.
-    $['.logging'] = function logging (level) {
+    $shell['.logging'] = function logging (level) {
       var loggingLevel = $void.env('logging-level')
       return typeof level !== 'number' ? loggingLevel
         : $void.env('logging-level', (level >>= 0) < 0 ? 0
@@ -801,6 +804,7 @@ module.exports = function ($void, reader, proc) {
     printf(' are imported.\n', 'gray')
 
     // initialize shell environment
+    interpret('(var * (import "$shell"))\n')
     interpret(profile + '\n')
     echoing = true
 
@@ -977,6 +981,8 @@ module.exports = function (uri) {
   switch (uri) {
     case 'restful':
       return __webpack_require__(/*! ./restful */ "./modules/restful.js")
+    case 'shell':
+      return __webpack_require__(/*! ./shell */ "./modules/shell.js")
     case 'symbols':
       return __webpack_require__(/*! ./symbols */ "./modules/symbols.js")
     case 'web':
@@ -1047,6 +1053,24 @@ module.exports = function (exporting, context, $void) {
     return bind($Object.of({ config: config }), axios.create(config))
   }
 
+  return true
+}
+
+
+/***/ }),
+
+/***/ "./modules/shell.js":
+/*!**************************!*\
+  !*** ./modules/shell.js ***!
+  \**************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+module.exports = function (exporting, context, $void) {
+  Object.assign(exporting, $void.$shell)
   return true
 }
 
@@ -12824,7 +12848,9 @@ module.exports = function ($void) {
         if (/[\s]/.test(c)) {
           if (stringPadding >= 0) { // padding or padded
             if (stringPadding === 0) { // pading
-              pendingText += ' ' // keeps the first space character.
+              if (pendingText.length > 1) { // avoid a leading whitespace
+                pendingText += ' ' // keeps the first space character.
+              }
               stringPadding = 1
             }
             return true
