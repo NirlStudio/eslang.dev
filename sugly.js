@@ -1070,6 +1070,7 @@ module.exports = function (exporting, context, $void) {
 
 
 module.exports = function (exporting, context, $void) {
+  // to connect global shell commands with app space.
   Object.assign(exporting, $void.$shell)
   return true
 }
@@ -1134,7 +1135,7 @@ module.exports = function (exporting) {
     return 'web module is only available when hosted in web browser'
   }
 
-  // exports here may be wrapped in future.
+  // exports may be wrapped in future.
   exporting.window = window
   exporting.location = window.location
   exporting.document = window.document
@@ -4582,10 +4583,10 @@ module.exports = function ($void) {
   })
 
   // Type Verification: a class is a class and a type.
-  link(proto, 'is-a', function (type) {
+  link(proto, ['is-a', 'is-an'], function (type) {
     return type === Type || type === $Type
   })
-  link(proto, 'is-not-a', function (type) {
+  link(proto, ['is-not-a', 'is-not-an'], function (type) {
     return type !== Type && type !== $Type
   })
 
@@ -4724,7 +4725,7 @@ module.exports = function ($void) {
   })
 
   // Type Verification
-  var isA = link(instance, 'is-a', function (t) {
+  var isA = link(instance, ['is-a', 'is-an'], function (t) {
     if (t === $Object || t === this.type) {
       return true
     }
@@ -4743,7 +4744,7 @@ module.exports = function ($void) {
     }
     return true
   })
-  link(instance, 'is-not-a', function (t) {
+  link(instance, ['is-not-a', 'is-not-an'], function (t) {
     return !isA.call(this, t)
   })
 
@@ -6233,12 +6234,12 @@ module.exports = function ($void) {
   })
 
   // Type Verification: to test if an entity is an instance of a type.
-  link(Null, 'is-a', function (type) {
+  link(Null, ['is-a', 'is-an'], function (type) {
     // null is null and null is a null.
     // type.proto is not null but is a null.
     return typeof type === 'undefined' || type === null
   })
-  link(Null, 'is-not-a', function (type) {
+  link(Null, ['is-not-a', 'is-not-an'], function (type) {
     return typeof type !== 'undefined' && type !== null
   })
 
@@ -6891,10 +6892,10 @@ module.exports = function ($void) {
   })
 
   // Type Verification
-  link(proto, 'is-a', function (t) {
+  link(proto, ['is-a', 'is-an'], function (t) {
     return t === Type
   })
-  link(proto, 'is-not-a', function (t) {
+  link(proto, ['is-not-a', 'is-not-an'], function (t) {
     return t !== Type
   })
 
@@ -8275,10 +8276,10 @@ module.exports = function ($void) {
   // Ordering inherits null.
 
   // Type Verification: Any non-empty value is an instance of its type.
-  link(proto, 'is-a', function (type) {
+  link(proto, ['is-a', 'is-an'], function (type) {
     return this.type === type
   })
-  link(proto, 'is-not-a', function (type) {
+  link(proto, ['is-not-a', 'is-not-an'], function (type) {
     return this.type !== type
   })
 
@@ -8369,10 +8370,10 @@ module.exports = function ($void) {
   })
 
   // Type Verification: Any type is a type.
-  link(Type, 'is-a', function (type) {
+  link(Type, ['is-a', 'is-an'], function (type) {
     return Type === type
   }, true)
-  link(Type, 'is-not-a', function (type) {
+  link(Type, ['is-not-a', 'is-not-an'], function (type) {
     return Type !== type
   }, true)
 
@@ -11229,7 +11230,7 @@ module.exports = function logical ($void) {
   staticOperator('not', not)
 
   // global logical AND operator
-  link(Null, '&&', operator(function (space, clause, that) {
+  link(Null, ['&&', 'and'], operator(function (space, clause, that) {
     if (!(space instanceof Space$)) {
       return null
     }
@@ -11252,7 +11253,7 @@ module.exports = function logical ($void) {
   }))
 
   // global logical OR operator
-  link(Null, '||', operator(function (space, clause, that) {
+  link(Null, ['||', 'or'], operator(function (space, clause, that) {
     var clist = clause && clause.$
     if (typeof that === 'undefined') {
       that = null
