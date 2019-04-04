@@ -708,6 +708,8 @@ module.exports = function ($void, reader, proc) {
   var printf = $void.$printf
   var thisCall = $void.thisCall
 
+  var $shell = $void.$shell = {}
+
   return function agent (args, echo, profile) {
     var echoing = false
     if (typeof echo !== 'function') {
@@ -766,7 +768,6 @@ module.exports = function ($void, reader, proc) {
     interpret('(run "tools/version")\n')
 
     // expose local loader cache.
-    var $shell = $void.$shell = {}
     printf('# shell object', 'gray'); printf(' .loader', 'yellow')
     $shell['.loader'] = $void.loader.cache.store
 
@@ -5663,7 +5664,6 @@ module.exports = function ($void) {
   $export($, '}', sharedSymbolOf('}'))
 
   // other pure symbols
-  $export($, 'in', sharedSymbolOf('in'))
   $export($, 'else', sharedSymbolOf('else'))
 
   // global enum value.
@@ -10154,14 +10154,17 @@ module.exports = function bitwise ($void) {
 
 
 module.exports = function control ($void) {
+  var $ = $void.$
   var Tuple$ = $void.Tuple
   var Signal$ = $void.Signal
   var Symbol$ = $void.Symbol
   var evaluate = $void.evaluate
   var signalOf = $void.signalOf
   var iterateOf = $void.iterateOf
+  var iteratorOf = $.iterator.of
   var sharedSymbolOf = $void.sharedSymbolOf
   var staticOperator = $void.staticOperator
+
   var symbolElse = sharedSymbolOf('else')
   var symbolIn = sharedSymbolOf('in')
 
@@ -10281,6 +10284,12 @@ module.exports = function control ($void) {
       }
     }
     return result
+  })
+
+  // a shortcut operator of (iterator of ...)
+  staticOperator('in', function (space, clause) {
+    var clist = clause.$
+    return iteratorOf(clist.length > 1 ? evaluate(clist[1], space) : null)
   })
 
   // (for value in iterable body) OR
@@ -11472,7 +11481,7 @@ module.exports = function runtime ($void) {
   var environment = Object.assign(Object.create(null), {
     'runtime-core': 'js',
     'runtime-host': $void.isNativeHost ? 'native' : 'browser',
-    'runtime-version': '0.9.9',
+    'runtime-version': '1.0.1',
     'is-debugging': true,
     'logging-level': 3
   })
@@ -13091,7 +13100,7 @@ module.exports = function ($void) {
     checkStaticOperators('[void / operators] ', [
       '`', 'quote', 'unquote',
       'export', 'var', 'let', 'const', 'local', 'locon',
-      '?', 'if', 'while', 'for', 'break', 'continue',
+      '?', 'if', 'while', 'in', 'for', 'break', 'continue',
       '+', '++', '--', '!', 'not', '~',
       '@', '=?', '=', '->', '=>', 'redo', 'return', 'exit',
       'import', 'load', 'fetch',
@@ -13548,15 +13557,14 @@ module.exports = function (term, stdout, loader) {
   }
 
   function shell (args, context) {
-    // export global shell commands
-    $void.$['test-bootstrap'] = __webpack_require__(/*! ../test/test */ "./test/test.js")($void)
-
     // generate shell agent.
     return initialize(context, function () {
       var reader = __webpack_require__(/*! ./lib/stdin */ "./web/lib/stdin.js")($void, term)
       var agent = __webpack_require__(/*! ../lib/shell */ "./lib/shell.js")($void, reader,
         __webpack_require__(/*! ./lib/process */ "./web/lib/process.js")($void)
       )
+      // export global shell commands
+      $void.$shell['test-bootstrap'] = __webpack_require__(/*! ../test/test */ "./test/test.js")($void)
       agent(args, term.echo)
       return reader.open()
     })
@@ -13773,7 +13781,7 @@ module.exports = function (term) {
 "use strict";
 
 
-var MaxLines = 4800
+var MaxLines = 2400
 var DrainBatch = 300
 
 var KeyEnter = 0x0D
@@ -13791,8 +13799,8 @@ var spooling = false
 var panel, input, enter
 
 function enqueue (todo) {
-  if (pool.length > MaxLines) {
-    pool = pool.slice(MaxLines / 2)
+  if (pool.length > (MaxLines * 2)) {
+    pool = pool.slice(MaxLines)
   }
   pool.push(todo)
 }
@@ -14094,7 +14102,7 @@ module.exports = function () {
   term.debug = loggerOf('debug').bind(null, '#D')
 
   // serve shell
-  term.echo = loggerOf('echo', 80).bind(null, '=')
+  term.echo = loggerOf('echo', 150).bind(null, '=')
 
   // serve stdin
   var inputPrompt = '>'
