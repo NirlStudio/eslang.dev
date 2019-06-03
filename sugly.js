@@ -729,9 +729,8 @@ module.exports = function ($void, reader, proc) {
     function typeInfoOf (prefix, value) {
       var info = '#(' + prefix + thisCall(typeOf(value), 'to-string')
       var name = !value ? ''
-        : typeof value.$name === 'string' ? value.$name
-          : typeof value.name === 'string' ? value.name
-            : ''
+        : typeof value.name === 'string' ? value.name
+          : ''
       return name ? info + ': ' + name + ')# ' : info + ')# '
     }
 
@@ -773,7 +772,7 @@ module.exports = function ($void, reader, proc) {
 
     printf(', and', 'gray')
     printf(' functions', 'gray'); printf(' .echo', 'blue')
-    //  toggle on/of the printing of evaluaion result.
+    //  toggle on/of the printing of evaluation result.
     $shell['.echo'] = function echo () {
       echoing = !echoing
       if (echoing) {
@@ -976,10 +975,11 @@ module.exports = function ($void, tracing) {
 "use strict";
 
 
+// a loader can fully control the importing process of a native module.
 var loaders = []
 
-module.exports = function (uri) {
-  switch (uri) {
+function loadDefault (moduleUri) {
+  switch (moduleUri) {
     case 'restful':
       return __webpack_require__(/*! ./restful */ "./modules/restful.js")
     case 'shell':
@@ -989,27 +989,47 @@ module.exports = function (uri) {
     case 'web':
       return __webpack_require__(/*! ./web */ "./modules/web.js")
     default:
-      break
+      return null
   }
+}
+
+module.exports = function (moduleUri, baseUri, $void) {
+  var importing = loadDefault(moduleUri)
+  if (importing) {
+    return importing
+  }
+  // latest loader has higher priority.
   for (var i = loaders.length - 1; i >= 0; i--) {
-    var module_ = loaders[i](uri)
-    if (module_) {
-      return module_
+    importing = loaders[i](moduleUri, baseUri, $void)
+    if (typeof importing === 'function') {
+      return importing
     }
   }
-  throw new Error('Undefine native module: ' + uri)
+  return null
 }
 
 module.exports.register = function (loader) {
-  loaders.unshift(loader)
+  if (typeof loader === 'function') {
+    loaders.unshift(loader)
+    return loader
+  }
+  return null
 }
 
 module.exports.unregister = function (loader) {
   for (var i = loaders.length - 1; i >= 0; i--) {
     if (loaders[i] === loader) {
       loaders.splice(i, 1)
+      return loader
     }
   }
+  return null
+}
+
+module.exports.copy = function (exporting, source, context, $void) {
+  context._generic = source // mostly reserved for future.
+  $void.safelyAssign(exporting, source)
+  return exporting
 }
 
 
@@ -1131,16 +1151,11 @@ module.exports = function (exporting) {
 "use strict";
 
 
-module.exports = function (exporting) {
+module.exports = function (exporting, context, $void) {
   if (typeof window === 'undefined') {
     return 'web module is only available when hosted in web browser'
   }
-
-  // exports may be wrapped in future.
-  exporting.window = window
-  exporting.location = window.location
-  exporting.document = window.document
-  exporting.navigator = window.navigator
+  $void.safelyAssign(exporting, window)
   return true
 }
 
@@ -1174,7 +1189,6 @@ var buildURL = __webpack_require__(/*! ./../helpers/buildURL */ "./node_modules/
 var parseHeaders = __webpack_require__(/*! ./../helpers/parseHeaders */ "./node_modules/axios/lib/helpers/parseHeaders.js");
 var isURLSameOrigin = __webpack_require__(/*! ./../helpers/isURLSameOrigin */ "./node_modules/axios/lib/helpers/isURLSameOrigin.js");
 var createError = __webpack_require__(/*! ../core/createError */ "./node_modules/axios/lib/core/createError.js");
-var btoa = (typeof window !== 'undefined' && window.btoa && window.btoa.bind(window)) || __webpack_require__(/*! ./../helpers/btoa */ "./node_modules/axios/lib/helpers/btoa.js");
 
 module.exports = function xhrAdapter(config) {
   return new Promise(function dispatchXhrRequest(resolve, reject) {
@@ -1186,22 +1200,6 @@ module.exports = function xhrAdapter(config) {
     }
 
     var request = new XMLHttpRequest();
-    var loadEvent = 'onreadystatechange';
-    var xDomain = false;
-
-    // For IE 8/9 CORS support
-    // Only supports POST and GET calls and doesn't returns the response headers.
-    // DON'T do this for testing b/c XMLHttpRequest is mocked, not XDomainRequest.
-    if ( true &&
-        typeof window !== 'undefined' &&
-        window.XDomainRequest && !('withCredentials' in request) &&
-        !isURLSameOrigin(config.url)) {
-      request = new window.XDomainRequest();
-      loadEvent = 'onload';
-      xDomain = true;
-      request.onprogress = function handleProgress() {};
-      request.ontimeout = function handleTimeout() {};
-    }
 
     // HTTP basic authentication
     if (config.auth) {
@@ -1216,8 +1214,8 @@ module.exports = function xhrAdapter(config) {
     request.timeout = config.timeout;
 
     // Listen for ready state
-    request[loadEvent] = function handleLoad() {
-      if (!request || (request.readyState !== 4 && !xDomain)) {
+    request.onreadystatechange = function handleLoad() {
+      if (!request || request.readyState !== 4) {
         return;
       }
 
@@ -1234,15 +1232,26 @@ module.exports = function xhrAdapter(config) {
       var responseData = !config.responseType || config.responseType === 'text' ? request.responseText : request.response;
       var response = {
         data: responseData,
-        // IE sends 1223 instead of 204 (https://github.com/axios/axios/issues/201)
-        status: request.status === 1223 ? 204 : request.status,
-        statusText: request.status === 1223 ? 'No Content' : request.statusText,
+        status: request.status,
+        statusText: request.statusText,
         headers: responseHeaders,
         config: config,
         request: request
       };
 
       settle(resolve, reject, response);
+
+      // Clean up request
+      request = null;
+    };
+
+    // Handle browser request cancellation (as opposed to a manual cancellation)
+    request.onabort = function handleAbort() {
+      if (!request) {
+        return;
+      }
+
+      reject(createError('Request aborted', config, 'ECONNABORTED', request));
 
       // Clean up request
       request = null;
@@ -1275,8 +1284,8 @@ module.exports = function xhrAdapter(config) {
 
       // Add xsrf header
       var xsrfValue = (config.withCredentials || isURLSameOrigin(config.url)) && config.xsrfCookieName ?
-          cookies.read(config.xsrfCookieName) :
-          undefined;
+        cookies.read(config.xsrfCookieName) :
+        undefined;
 
       if (xsrfValue) {
         requestHeaders[config.xsrfHeaderName] = xsrfValue;
@@ -1363,6 +1372,7 @@ module.exports = function xhrAdapter(config) {
 var utils = __webpack_require__(/*! ./utils */ "./node_modules/axios/lib/utils.js");
 var bind = __webpack_require__(/*! ./helpers/bind */ "./node_modules/axios/lib/helpers/bind.js");
 var Axios = __webpack_require__(/*! ./core/Axios */ "./node_modules/axios/lib/core/Axios.js");
+var mergeConfig = __webpack_require__(/*! ./core/mergeConfig */ "./node_modules/axios/lib/core/mergeConfig.js");
 var defaults = __webpack_require__(/*! ./defaults */ "./node_modules/axios/lib/defaults.js");
 
 /**
@@ -1392,7 +1402,7 @@ axios.Axios = Axios;
 
 // Factory for creating new instances
 axios.create = function create(instanceConfig) {
-  return createInstance(utils.merge(defaults, instanceConfig));
+  return createInstance(mergeConfig(axios.defaults, instanceConfig));
 };
 
 // Expose Cancel & CancelToken
@@ -1541,10 +1551,11 @@ module.exports = function isCancel(value) {
 "use strict";
 
 
-var defaults = __webpack_require__(/*! ./../defaults */ "./node_modules/axios/lib/defaults.js");
 var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var buildURL = __webpack_require__(/*! ../helpers/buildURL */ "./node_modules/axios/lib/helpers/buildURL.js");
 var InterceptorManager = __webpack_require__(/*! ./InterceptorManager */ "./node_modules/axios/lib/core/InterceptorManager.js");
 var dispatchRequest = __webpack_require__(/*! ./dispatchRequest */ "./node_modules/axios/lib/core/dispatchRequest.js");
+var mergeConfig = __webpack_require__(/*! ./mergeConfig */ "./node_modules/axios/lib/core/mergeConfig.js");
 
 /**
  * Create a new instance of Axios
@@ -1568,13 +1579,14 @@ Axios.prototype.request = function request(config) {
   /*eslint no-param-reassign:0*/
   // Allow for axios('example/url'[, config]) a la fetch API
   if (typeof config === 'string') {
-    config = utils.merge({
-      url: arguments[0]
-    }, arguments[1]);
+    config = arguments[1] || {};
+    config.url = arguments[0];
+  } else {
+    config = config || {};
   }
 
-  config = utils.merge(defaults, {method: 'get'}, this.defaults, config);
-  config.method = config.method.toLowerCase();
+  config = mergeConfig(this.defaults, config);
+  config.method = config.method ? config.method.toLowerCase() : 'get';
 
   // Hook up interceptors middleware
   var chain = [dispatchRequest, undefined];
@@ -1593,6 +1605,11 @@ Axios.prototype.request = function request(config) {
   }
 
   return promise;
+};
+
+Axios.prototype.getUri = function getUri(config) {
+  config = mergeConfig(this.defaults, config);
+  return buildURL(config.url, config.params, config.paramsSerializer).replace(/^\?/, '');
 };
 
 // Provide aliases for supported request methods
@@ -1839,9 +1856,93 @@ module.exports = function enhanceError(error, config, code, request, response) {
   if (code) {
     error.code = code;
   }
+
   error.request = request;
   error.response = response;
+  error.isAxiosError = true;
+
+  error.toJSON = function() {
+    return {
+      // Standard
+      message: this.message,
+      name: this.name,
+      // Microsoft
+      description: this.description,
+      number: this.number,
+      // Mozilla
+      fileName: this.fileName,
+      lineNumber: this.lineNumber,
+      columnNumber: this.columnNumber,
+      stack: this.stack,
+      // Axios
+      config: this.config,
+      code: this.code
+    };
+  };
   return error;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/mergeConfig.js":
+/*!****************************************************!*\
+  !*** ./node_modules/axios/lib/core/mergeConfig.js ***!
+  \****************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ../utils */ "./node_modules/axios/lib/utils.js");
+
+/**
+ * Config-specific merge-function which creates a new config-object
+ * by merging two configuration objects together.
+ *
+ * @param {Object} config1
+ * @param {Object} config2
+ * @returns {Object} New object resulting from merging config2 to config1
+ */
+module.exports = function mergeConfig(config1, config2) {
+  // eslint-disable-next-line no-param-reassign
+  config2 = config2 || {};
+  var config = {};
+
+  utils.forEach(['url', 'method', 'params', 'data'], function valueFromConfig2(prop) {
+    if (typeof config2[prop] !== 'undefined') {
+      config[prop] = config2[prop];
+    }
+  });
+
+  utils.forEach(['headers', 'auth', 'proxy'], function mergeDeepProperties(prop) {
+    if (utils.isObject(config2[prop])) {
+      config[prop] = utils.deepMerge(config1[prop], config2[prop]);
+    } else if (typeof config2[prop] !== 'undefined') {
+      config[prop] = config2[prop];
+    } else if (utils.isObject(config1[prop])) {
+      config[prop] = utils.deepMerge(config1[prop]);
+    } else if (typeof config1[prop] !== 'undefined') {
+      config[prop] = config1[prop];
+    }
+  });
+
+  utils.forEach([
+    'baseURL', 'transformRequest', 'transformResponse', 'paramsSerializer',
+    'timeout', 'withCredentials', 'adapter', 'responseType', 'xsrfCookieName',
+    'xsrfHeaderName', 'onUploadProgress', 'onDownloadProgress', 'maxContentLength',
+    'validateStatus', 'maxRedirects', 'httpAgent', 'httpsAgent', 'cancelToken',
+    'socketPath'
+  ], function defaultToConfig2(prop) {
+    if (typeof config2[prop] !== 'undefined') {
+      config[prop] = config2[prop];
+    } else if (typeof config1[prop] !== 'undefined') {
+      config[prop] = config1[prop];
+    }
+  });
+
+  return config;
 };
 
 
@@ -1868,8 +1969,7 @@ var createError = __webpack_require__(/*! ./createError */ "./node_modules/axios
  */
 module.exports = function settle(resolve, reject, response) {
   var validateStatus = response.config.validateStatus;
-  // Note: status is not exposed by XDomainRequest
-  if (!response.status || !validateStatus || validateStatus(response.status)) {
+  if (!validateStatus || validateStatus(response.status)) {
     resolve(response);
   } else {
     reject(createError(
@@ -1942,12 +2042,13 @@ function setContentTypeIfUnset(headers, value) {
 
 function getDefaultAdapter() {
   var adapter;
-  if (typeof XMLHttpRequest !== 'undefined') {
-    // For browsers use XHR adapter
-    adapter = __webpack_require__(/*! ./adapters/xhr */ "./node_modules/axios/lib/adapters/xhr.js");
-  } else if (typeof process !== 'undefined') {
+  // Only Node.JS has a process variable that is of [[Class]] process
+  if (typeof process !== 'undefined' && Object.prototype.toString.call(process) === '[object process]') {
     // For node use HTTP adapter
     adapter = __webpack_require__(/*! ./adapters/http */ "./node_modules/axios/lib/adapters/xhr.js");
+  } else if (typeof XMLHttpRequest !== 'undefined') {
+    // For browsers use XHR adapter
+    adapter = __webpack_require__(/*! ./adapters/xhr */ "./node_modules/axios/lib/adapters/xhr.js");
   }
   return adapter;
 }
@@ -1956,6 +2057,7 @@ var defaults = {
   adapter: getDefaultAdapter(),
 
   transformRequest: [function transformRequest(data, headers) {
+    normalizeHeaderName(headers, 'Accept');
     normalizeHeaderName(headers, 'Content-Type');
     if (utils.isFormData(data) ||
       utils.isArrayBuffer(data) ||
@@ -2049,54 +2151,6 @@ module.exports = function bind(fn, thisArg) {
 
 /***/ }),
 
-/***/ "./node_modules/axios/lib/helpers/btoa.js":
-/*!************************************************!*\
-  !*** ./node_modules/axios/lib/helpers/btoa.js ***!
-  \************************************************/
-/*! no static exports found */
-/***/ (function(module, exports, __webpack_require__) {
-
-"use strict";
-
-
-// btoa polyfill for IE<10 courtesy https://github.com/davidchambers/Base64.js
-
-var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-
-function E() {
-  this.message = 'String contains an invalid character';
-}
-E.prototype = new Error;
-E.prototype.code = 5;
-E.prototype.name = 'InvalidCharacterError';
-
-function btoa(input) {
-  var str = String(input);
-  var output = '';
-  for (
-    // initialize result and counter
-    var block, charCode, idx = 0, map = chars;
-    // if the next str index does not exist:
-    //   change the mapping table to "="
-    //   check if d has no fractional digits
-    str.charAt(idx | 0) || (map = '=', idx % 1);
-    // "8 - idx % 1 * 8" generates the sequence 2, 4, 6, 8
-    output += map.charAt(63 & block >> 8 - idx % 1 * 8)
-  ) {
-    charCode = str.charCodeAt(idx += 3 / 4);
-    if (charCode > 0xFF) {
-      throw new E();
-    }
-    block = block << 8 | charCode;
-  }
-  return output;
-}
-
-module.exports = btoa;
-
-
-/***/ }),
-
 /***/ "./node_modules/axios/lib/helpers/buildURL.js":
 /*!****************************************************!*\
   !*** ./node_modules/axios/lib/helpers/buildURL.js ***!
@@ -2166,6 +2220,11 @@ module.exports = function buildURL(url, params, paramsSerializer) {
   }
 
   if (serializedParams) {
+    var hashmarkIndex = url.indexOf('#');
+    if (hashmarkIndex !== -1) {
+      url = url.slice(0, hashmarkIndex);
+    }
+
     url += (url.indexOf('?') === -1 ? '?' : '&') + serializedParams;
   }
 
@@ -2217,50 +2276,50 @@ module.exports = (
   utils.isStandardBrowserEnv() ?
 
   // Standard browser envs support document.cookie
-  (function standardBrowserEnv() {
-    return {
-      write: function write(name, value, expires, path, domain, secure) {
-        var cookie = [];
-        cookie.push(name + '=' + encodeURIComponent(value));
+    (function standardBrowserEnv() {
+      return {
+        write: function write(name, value, expires, path, domain, secure) {
+          var cookie = [];
+          cookie.push(name + '=' + encodeURIComponent(value));
 
-        if (utils.isNumber(expires)) {
-          cookie.push('expires=' + new Date(expires).toGMTString());
+          if (utils.isNumber(expires)) {
+            cookie.push('expires=' + new Date(expires).toGMTString());
+          }
+
+          if (utils.isString(path)) {
+            cookie.push('path=' + path);
+          }
+
+          if (utils.isString(domain)) {
+            cookie.push('domain=' + domain);
+          }
+
+          if (secure === true) {
+            cookie.push('secure');
+          }
+
+          document.cookie = cookie.join('; ');
+        },
+
+        read: function read(name) {
+          var match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+          return (match ? decodeURIComponent(match[3]) : null);
+        },
+
+        remove: function remove(name) {
+          this.write(name, '', Date.now() - 86400000);
         }
-
-        if (utils.isString(path)) {
-          cookie.push('path=' + path);
-        }
-
-        if (utils.isString(domain)) {
-          cookie.push('domain=' + domain);
-        }
-
-        if (secure === true) {
-          cookie.push('secure');
-        }
-
-        document.cookie = cookie.join('; ');
-      },
-
-      read: function read(name) {
-        var match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
-        return (match ? decodeURIComponent(match[3]) : null);
-      },
-
-      remove: function remove(name) {
-        this.write(name, '', Date.now() - 86400000);
-      }
-    };
-  })() :
+      };
+    })() :
 
   // Non standard browser env (web workers, react-native) lack needed support.
-  (function nonStandardBrowserEnv() {
-    return {
-      write: function write() {},
-      read: function read() { return null; },
-      remove: function remove() {}
-    };
-  })()
+    (function nonStandardBrowserEnv() {
+      return {
+        write: function write() {},
+        read: function read() { return null; },
+        remove: function remove() {}
+      };
+    })()
 );
 
 
@@ -2309,64 +2368,64 @@ module.exports = (
 
   // Standard browser envs have full support of the APIs needed to test
   // whether the request URL is of the same origin as current location.
-  (function standardBrowserEnv() {
-    var msie = /(msie|trident)/i.test(navigator.userAgent);
-    var urlParsingNode = document.createElement('a');
-    var originURL;
+    (function standardBrowserEnv() {
+      var msie = /(msie|trident)/i.test(navigator.userAgent);
+      var urlParsingNode = document.createElement('a');
+      var originURL;
 
-    /**
+      /**
     * Parse a URL to discover it's components
     *
     * @param {String} url The URL to be parsed
     * @returns {Object}
     */
-    function resolveURL(url) {
-      var href = url;
+      function resolveURL(url) {
+        var href = url;
 
-      if (msie) {
+        if (msie) {
         // IE needs attribute set twice to normalize properties
+          urlParsingNode.setAttribute('href', href);
+          href = urlParsingNode.href;
+        }
+
         urlParsingNode.setAttribute('href', href);
-        href = urlParsingNode.href;
+
+        // urlParsingNode provides the UrlUtils interface - http://url.spec.whatwg.org/#urlutils
+        return {
+          href: urlParsingNode.href,
+          protocol: urlParsingNode.protocol ? urlParsingNode.protocol.replace(/:$/, '') : '',
+          host: urlParsingNode.host,
+          search: urlParsingNode.search ? urlParsingNode.search.replace(/^\?/, '') : '',
+          hash: urlParsingNode.hash ? urlParsingNode.hash.replace(/^#/, '') : '',
+          hostname: urlParsingNode.hostname,
+          port: urlParsingNode.port,
+          pathname: (urlParsingNode.pathname.charAt(0) === '/') ?
+            urlParsingNode.pathname :
+            '/' + urlParsingNode.pathname
+        };
       }
 
-      urlParsingNode.setAttribute('href', href);
+      originURL = resolveURL(window.location.href);
 
-      // urlParsingNode provides the UrlUtils interface - http://url.spec.whatwg.org/#urlutils
-      return {
-        href: urlParsingNode.href,
-        protocol: urlParsingNode.protocol ? urlParsingNode.protocol.replace(/:$/, '') : '',
-        host: urlParsingNode.host,
-        search: urlParsingNode.search ? urlParsingNode.search.replace(/^\?/, '') : '',
-        hash: urlParsingNode.hash ? urlParsingNode.hash.replace(/^#/, '') : '',
-        hostname: urlParsingNode.hostname,
-        port: urlParsingNode.port,
-        pathname: (urlParsingNode.pathname.charAt(0) === '/') ?
-                  urlParsingNode.pathname :
-                  '/' + urlParsingNode.pathname
-      };
-    }
-
-    originURL = resolveURL(window.location.href);
-
-    /**
+      /**
     * Determine if a URL shares the same origin as the current location
     *
     * @param {String} requestURL The URL to test
     * @returns {boolean} True if URL shares the same origin, otherwise false
     */
-    return function isURLSameOrigin(requestURL) {
-      var parsed = (utils.isString(requestURL)) ? resolveURL(requestURL) : requestURL;
-      return (parsed.protocol === originURL.protocol &&
+      return function isURLSameOrigin(requestURL) {
+        var parsed = (utils.isString(requestURL)) ? resolveURL(requestURL) : requestURL;
+        return (parsed.protocol === originURL.protocol &&
             parsed.host === originURL.host);
-    };
-  })() :
+      };
+    })() :
 
   // Non standard browser envs (web workers, react-native) lack needed support.
-  (function nonStandardBrowserEnv() {
-    return function isURLSameOrigin() {
-      return true;
-    };
-  })()
+    (function nonStandardBrowserEnv() {
+      return function isURLSameOrigin() {
+        return true;
+      };
+    })()
 );
 
 
@@ -2511,7 +2570,7 @@ module.exports = function spread(callback) {
 
 
 var bind = __webpack_require__(/*! ./helpers/bind */ "./node_modules/axios/lib/helpers/bind.js");
-var isBuffer = __webpack_require__(/*! is-buffer */ "./node_modules/is-buffer/index.js");
+var isBuffer = __webpack_require__(/*! is-buffer */ "./node_modules/axios/node_modules/is-buffer/index.js");
 
 /*global toString:true*/
 
@@ -2687,9 +2746,13 @@ function trim(str) {
  *
  * react-native:
  *  navigator.product -> 'ReactNative'
+ * nativescript
+ *  navigator.product -> 'NativeScript' or 'NS'
  */
 function isStandardBrowserEnv() {
-  if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+  if (typeof navigator !== 'undefined' && (navigator.product === 'ReactNative' ||
+                                           navigator.product === 'NativeScript' ||
+                                           navigator.product === 'NS')) {
     return false;
   }
   return (
@@ -2771,6 +2834,32 @@ function merge(/* obj1, obj2, obj3, ... */) {
 }
 
 /**
+ * Function equal to merge with the difference being that no reference
+ * to original objects is kept.
+ *
+ * @see merge
+ * @param {Object} obj1 Object to merge
+ * @returns {Object} Result of all merge properties
+ */
+function deepMerge(/* obj1, obj2, obj3, ... */) {
+  var result = {};
+  function assignValue(val, key) {
+    if (typeof result[key] === 'object' && typeof val === 'object') {
+      result[key] = deepMerge(result[key], val);
+    } else if (typeof val === 'object') {
+      result[key] = deepMerge({}, val);
+    } else {
+      result[key] = val;
+    }
+  }
+
+  for (var i = 0, l = arguments.length; i < l; i++) {
+    forEach(arguments[i], assignValue);
+  }
+  return result;
+}
+
+/**
  * Extends object a by mutably adding to it the properties of object b.
  *
  * @param {Object} a The object to be extended
@@ -2808,6 +2897,7 @@ module.exports = {
   isStandardBrowserEnv: isStandardBrowserEnv,
   forEach: forEach,
   merge: merge,
+  deepMerge: deepMerge,
   extend: extend,
   trim: trim
 };
@@ -2815,10 +2905,10 @@ module.exports = {
 
 /***/ }),
 
-/***/ "./node_modules/is-buffer/index.js":
-/*!*****************************************!*\
-  !*** ./node_modules/is-buffer/index.js ***!
-  \*****************************************/
+/***/ "./node_modules/axios/node_modules/is-buffer/index.js":
+/*!************************************************************!*\
+  !*** ./node_modules/axios/node_modules/is-buffer/index.js ***!
+  \************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports) {
 
@@ -2829,19 +2919,9 @@ module.exports = {
  * @license  MIT
  */
 
-// The _isBuffer check is for Safari 5-7 support, because it's missing
-// Object.prototype.constructor. Remove this eventually
-module.exports = function (obj) {
-  return obj != null && (isBuffer(obj) || isSlowBuffer(obj) || !!obj._isBuffer)
-}
-
-function isBuffer (obj) {
-  return !!obj.constructor && typeof obj.constructor.isBuffer === 'function' && obj.constructor.isBuffer(obj)
-}
-
-// For Node v0.10 support. Remove this eventually.
-function isSlowBuffer (obj) {
-  return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
+module.exports = function isBuffer (obj) {
+  return obj != null && obj.constructor != null &&
+    typeof obj.constructor.isBuffer === 'function' && obj.constructor.isBuffer(obj)
 }
 
 
@@ -3073,6 +3153,17 @@ module.exports = g;
 
 /***/ }),
 
+/***/ "./package.json":
+/*!**********************!*\
+  !*** ./package.json ***!
+  \**********************/
+/*! exports provided: name, version, author, license, repository, description, main, scripts, bin, dependencies, devDependencies, default */
+/***/ (function(module) {
+
+module.exports = {"name":"sugly","version":"1.0.2","author":{"email":"leevi@nirlstudio.com","name":"Leevi Li"},"license":"MIT","repository":"nirlstudio/sugly-lang","description":"A conceptual implementation of Sugly programming language.","main":"index.js","scripts":{"test":"node . selftest","check":"node test/test.js","build":"webpack & webpack --mode=production","build-dev":"webpack","build-prod":"webpack --mode=production","clean":"rm -r dist/*","start":"webpack-dev-server --mode development"},"bin":{"sugly":"bin/sugly"},"dependencies":{"axios":">=0.19.0","colors":"^1.3.3","node-localstorage":"^1.3.1"},"devDependencies":{"hooks-webpack-plugin":"^1.0.3","shelljs":"^0.8.3","webpack":"^4.31.0","webpack-cli":"^3.3.2","webpack-dev-server":"^3.3.1"}};
+
+/***/ }),
+
 /***/ "./sugly.js":
 /*!******************!*\
   !*** ./sugly.js ***!
@@ -3148,7 +3239,7 @@ module.exports = function ($void) {
       srcUri = ''
     }
 
-    var stack, sourceStack, waiter, lastToken, openningLine, openningOffset
+    var stack, sourceStack, waiter, lastToken, openingLine, openingOffset
     resetContext()
 
     function resetContext () {
@@ -3156,8 +3247,8 @@ module.exports = function ($void) {
       sourceStack = [[[[0, 0, 0]]]]
       waiter = null
       lastToken = ['space', '', [0, 0, 0]]
-      openningLine = -1
-      openningOffset = 0
+      openingLine = -1
+      openingOffset = 0
     }
 
     var tokenizing = tokenizer(compileToken, srcUri)
@@ -3180,9 +3271,9 @@ module.exports = function ($void) {
 
     function compileToken (type, value, source) {
       var endingLine = source[source.length - 2]
-      if (endingLine !== openningLine) {
-        openningLine = endingLine
-        openningOffset = stack[stack.length - 1].length
+      if (endingLine !== openingLine) {
+        openingLine = endingLine
+        openingOffset = stack[stack.length - 1].length
       }
       if (!waiter || !waiter(type, value, source)) {
         parseToken(type, value, source)
@@ -3259,7 +3350,7 @@ module.exports = function ($void) {
           // wait for next token to decide
           waiter = endingWaiter
           break
-        default: // just skip unknow punctuations as some placeholders.
+        default: // just skip unknown punctuation as some placeholders.
           break
       }
     }
@@ -3315,7 +3406,7 @@ module.exports = function ($void) {
       var sourceMap = sourceStack.pop()
       sourceMap[0].push(source || lastToken[2])
       while (statement.length > 2 &&
-        tryTofoldStatement(statement, sourceMap)
+        tryToFoldStatement(statement, sourceMap)
       );
       // push it to the end of container clause.
       sourceMap[0].unshift(srcUri || srcText)
@@ -3324,7 +3415,7 @@ module.exports = function ($void) {
       sourceStack[sourceStack.length - 1].push(sourceMap[0].slice(1))
     }
 
-    function tryTofoldStatement (statement, sourceMap) { // sweeter time.
+    function tryToFoldStatement (statement, sourceMap) { // sweeter time.
       var max = statement.length - 1
       for (var i = 1; i < max; i++) {
         if (statement[i] === symbolPairing && statement[i + 1] === symbolPairing) {
@@ -3392,20 +3483,20 @@ module.exports = function ($void) {
 
     function crossingLines () {
       var depth = sourceStack.length - 1
-      var srcOffset = openningOffset + 1
+      var srcOffset = openingOffset + 1
       var topSource = sourceStack[depth]
       return topSource.length > srcOffset &&
-        openningLine > topSource[srcOffset][1]
+        openingLine > topSource[srcOffset][1]
     }
 
     function closeLine (value, source) { // sweeter time.
       var depth = stack.length - 1
-      stack.push(stack[depth].splice(openningOffset))
-      var src = sourceStack[depth].splice(openningOffset + 1)
+      stack.push(stack[depth].splice(openingOffset))
+      var src = sourceStack[depth].splice(openingOffset + 1)
       src.length > 0 ? src.unshift(src[0]) : src.push(source)
       sourceStack.push(src)
       endTopWith(source)
-      openningOffset = stack[depth].length
+      openingOffset = stack[depth].length
     }
 
     function endIndent (value, source) { // sugar time
@@ -3531,7 +3622,6 @@ module.exports = function ($void) {
   var protoValueOf = $void.protoValueOf
   var EncodingContext$ = $void.EncodingContext
   var defineProperty = $void.defineProperty
-  var defineTypeProperty = $void.defineTypeProperty
 
   // create an empty array.
   link(Type, 'empty', function () {
@@ -3885,7 +3975,7 @@ module.exports = function ($void) {
     return result
   })
 
-  // replace all occurances of a value to another value or reset them.
+  // replace all occurrences of a value to another value or reset them.
   var replace = function (value, newValue) {
     var i, current
     if (typeof newValue === 'undefined') {
@@ -3922,7 +4012,7 @@ module.exports = function ($void) {
     return this
   })
 
-  // check the existence of an elememt by a filter function
+  // check the existence of an element by a filter function
   link(proto, 'has', function (filter) {
     if (!isApplicable(filter)) { // as an index number
       return typeof this[offsetOf(this.length, filter)] !== 'undefined'
@@ -3959,7 +4049,7 @@ module.exports = function ($void) {
     return found
   })
 
-  // sawp two value by offsets.
+  // swap two value by offsets.
   link(proto, 'swap', function (i, j) {
     var length = this.length
     i = offsetOf(length, i)
@@ -4005,7 +4095,7 @@ module.exports = function ($void) {
     }
     return result
   })
-  // find the index of first occurance of a value.
+  // find the index of first occurrence of a value.
   var firstOf = function (value) {
     for (var i = 0; i < this.length; i++) {
       var v = this[i]
@@ -4062,7 +4152,7 @@ module.exports = function ($void) {
     }
     return result
   })
-  // find the index of the last occurance of a value.
+  // find the index of the last occurrence of a value.
   var lastOf = function (value) {
     for (var i = this.length - 1; i >= 0; i--) {
       var v = this[i]
@@ -4145,7 +4235,7 @@ module.exports = function ($void) {
     this.unshift.apply(this, arguments)
     return this
   })
-  proto.dequeue = proto.pop
+  proto.dequeue = proto.pop // dequeue is only an alias of pop.
 
   // reverse the order of all elements
   link(proto, 'reverse', function () {
@@ -4327,9 +4417,6 @@ module.exports = function ($void) {
 
   // export type indexer.
   link(Type, 'indexer', indexer)
-
-  // inject type
-  defineTypeProperty(Array.prototype, Type)
 }
 
 
@@ -4351,7 +4438,6 @@ module.exports = function ($void) {
   var link = $void.link
   var Symbol$ = $void.Symbol
   var protoValueOf = $void.protoValueOf
-  var defineTypeProperty = $void.defineTypeProperty
 
   // the empty value of bool is the false.
   link(Type, 'empty', false)
@@ -4386,9 +4472,6 @@ module.exports = function ($void) {
 
   // export type indexer.
   link(Type, 'indexer', indexer)
-
-  // inject type
-  defineTypeProperty(Boolean.prototype, Type)
 }
 
 
@@ -4416,6 +4499,7 @@ module.exports = function ($void) {
   var ClassType$ = $void.ClassType
   var ClassInst$ = $void.ClassInst
   var link = $void.link
+  var typeOf = $void.typeOf
   var bindThis = $void.bindThis
   var isObject = $void.isObject
   var thisCall = $void.thisCall
@@ -4704,7 +4788,7 @@ module.exports = function ($void) {
     return !equals.call(this, another)
   })
 
-  // Enable the customizaztion of Ordering.
+  // Enable the customization of Ordering.
   var compare = link(instance, 'compare', function (another) {
     var ordering
     return this === another || equals.call(this, another) ? 0
@@ -4727,7 +4811,7 @@ module.exports = function ($void) {
 
   // Type Verification
   var isA = link(instance, ['is-a', 'is-an'], function (t) {
-    if (t === $Object || t === this.type) {
+    if (t === $Object || (this.type instanceof ClassType$ && t === this.type)) {
       return true
     }
     var overriding = this['is-a']
@@ -4762,7 +4846,7 @@ module.exports = function ($void) {
       ctx = new EncodingContext$(this)
     }
     var code = overriding.call(this)
-    return $Type.of(code) === $Object
+    return typeOf(code) === $Object
       ? ctx.end(this, this.type, objectToCode.call(code))
       : code instanceof Tuple$ && code.plain !== true
         ? ctx.end(this, $Object, code) // app handle its type information.
@@ -4777,7 +4861,6 @@ module.exports = function ($void) {
       : overriding.apply(this, arguments)
   })
 
-  var typeOf = $.type.of
   var indexer = link(instance, ':', function (index, value) {
     var overriding
     if (typeof index === 'string') {
@@ -4848,7 +4931,6 @@ module.exports = function ($void) {
   var protoValueOf = $void.protoValueOf
   var numberCompare = $.number.proto.compare
   var numberToString = $.number.proto['to-string']
-  var defineTypeProperty = $void.defineTypeProperty
 
   // the empty value
   var empty = link(Type, 'empty', new Date(0))
@@ -5051,9 +5133,6 @@ module.exports = function ($void) {
 
   // export type indexer.
   link(Type, 'indexer', indexer)
-
-  // inject type
-  defineTypeProperty(Date.prototype, Type)
 }
 
 /* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../../node_modules/process/browser.js */ "./node_modules/process/browser.js")))
@@ -5140,7 +5219,6 @@ var createIndex = typeof Map === 'function' ? function () {
 
 module.exports = function ($void) {
   var $ = $void.$
-  var $Type = $.type
   var $Tuple = $.tuple
   var $Array = $.array
   var $Object = $.object
@@ -5148,6 +5226,7 @@ module.exports = function ($void) {
   var Tuple$ = $void.Tuple
   var Object$ = $void.Object
   var Symbol$ = $void.Symbol
+  var typeOf = $void.typeOf
   var thisCall = $void.thisCall
   var sharedSymbolOf = $void.sharedSymbolOf
 
@@ -5184,8 +5263,8 @@ module.exports = function ($void) {
   }
 
   $void.EncodingContext = function (root) {
-    this.objs = createIndex()
-    this.objs.add(this.root = root, null)
+    this.objects = createIndex()
+    this.objects.add(this.root = root, null)
     this.clist = []
     this.shared = []
   }
@@ -5196,15 +5275,15 @@ module.exports = function ($void) {
       return ref
     },
     begin: function (obj) {
-      var offset = this.objs.get(obj)
+      var offset = this.objects.get(obj)
       if (typeof offset === 'undefined') { // first touch
-        return this.objs.add(obj, null)
+        return this.objects.add(obj, null)
       }
       var ref
       if (offset === null) { // to be recursively reused.
         offset = this.clist.length
         ref = this._createRef(offset)
-        this.objs.set(obj, offset)
+        this.objects.set(obj, offset)
         this.clist.push([ref, null, null])
         return ref
       }
@@ -5222,7 +5301,7 @@ module.exports = function ($void) {
     encode: function (obj) {
       return typeof obj === 'undefined' || obj === null ? null
         : typeof obj === 'number' || typeof obj === 'string' ? obj
-          : (Array.isArray(obj) || $Type.of(obj) === $Object ||
+          : (Array.isArray(obj) || typeOf(obj) === $Object ||
             obj instanceof Object$ // class instances
           ) ? thisCall(obj, 'to-code', this) : thisCall(obj, 'to-code')
     },
@@ -5236,11 +5315,11 @@ module.exports = function ($void) {
         }
       }
       // assert(code instanceof Tuple$)
-      var offset = this.objs.get(obj)
+      var offset = this.objects.get(obj)
       // assert(typeof offset !== 'undefined')
       if (offset === null) {
         offset = this.clist.length
-        this.objs.set(obj, offset)
+        this.objects.set(obj, offset)
         this.clist.push([null, type, code])
         return obj === this.root ? this._finalize(offset) : code
       }
@@ -5294,11 +5373,13 @@ module.exports = function ($void) {
   var $ = $void.$
   var Type = $.function
   var $Tuple = $.tuple
+  var $Object = $.object
+  var Tuple$ = $void.Tuple
   var link = $void.link
   var bindThis = $void.bindThis
+  var safelyAssign = $void.safelyAssign
   var prepareOperation = $void.prepareOperation
   var prepareApplicable = $void.prepareApplicable
-  var defineTypeProperty = $void.defineTypeProperty
 
   // the noop function
   var noop = link(Type, 'noop', $void.function(function () {
@@ -5314,11 +5395,16 @@ module.exports = function ($void) {
     return bindThis(typeof $this !== 'undefined' ? $this : null, this)
   })
 
+  // retrieve generic members of a native function.
+  link(proto, ['generic', '$'], function () {
+    return this.code instanceof Tuple$ ? null // only for generic functions.
+      : safelyAssign($Object.empty(),
+        typeof this.bound === 'function' ? this.bound : this
+      )
+  })
+
   // implement applicable operation features.
   prepareApplicable(Type, $Tuple.function)
-
-  // inject function as the default type for native functions.
-  defineTypeProperty(Function.prototype, Type)
 }
 
 
@@ -5354,7 +5440,7 @@ module.exports = function () {
   /* “Let there be light,” and there was light. */
   // The light is the laws, which are the foundation of all beings.
   var Prototype = Object.create(Null) /* 1. Derivation */
-  function Type$ () { /* 2. Separation & Aggregation */
+  var Type$ = $void.Type$ = function () { /* 2. Separation & Aggregation */
     // This function should be executed once, and only once.
     // The primal type is derived from the supreme prototype.
     this.proto = Prototype
@@ -5378,7 +5464,7 @@ module.exports = function () {
   $.null = null
 
   // The logical noumenon of null is not accessible directly, otherwise it will
-  // cause some confusion in evalution process.
+  // cause some confusion in evaluation process.
   // P.S, so is our fate too?
 
   /* A placeholder constructor to test a type. */
@@ -5421,7 +5507,7 @@ module.exports = function () {
   create('date')
   $void.Date = Date
 
-  // A range value represents a descrete sequence of numbers in the interval of
+  // A range value represents a discrete sequence of numbers in the interval of
   // [begin, end) and a step value.
   create('range')
   var Range$ = $void.Range = function (begin, end, step) {
@@ -5433,11 +5519,11 @@ module.exports = function () {
 
   /* Expression Types */
   /* An expression entity may produce another entity after evaluation. */
-  /* An expression value can be fully encoded and recevered. */
+  /* An expression value can be fully encoded and recovered. */
   /* A static value can also be a part of an expression. */
 
   // A symbol is an identifer of a semantic element, so the string value of its
-  // key must comply with some fundamental exical rules.
+  // key must comply with some fundamental lexical rules.
   // A symbol will be resolved to the associated value under current context or
   // null by the evaluation function.
   create('symbol')
@@ -5474,7 +5560,7 @@ module.exports = function () {
     return impl
   }
 
-  // the contaier for static operators. Static operators are taken as an
+  // the container for static operators. Static operators are taken as an
   // essential part of the language itself. They cannot be overridden.
   $void.staticOperators = Object.create(null)
 
@@ -5506,7 +5592,7 @@ module.exports = function () {
     return impl
   }
 
-  // A function is an operation which works like a Closure. Its behaviour depends
+  // A function is an operation which works like a Closure. Its behavior depends
   // on both the values of arguments and current values in its outer context.
   // A function is not explicitly alterable but its implicit context is dynamic
   // and persistent in running. So its overall state is mutable.
@@ -5536,12 +5622,12 @@ module.exports = function () {
 
   // A special type to wrap the transient state of an ongoing action.
   create('promise')
-  // TODO: to be polyfilled ?
+  // If it's missing, app layer should provide the polyfill.
   $void.Promise = Promise
 
   /* Compound Types */
   /* By default, compound entities are mutable. */
-  /* All compound entities are also fixed points of evaluation funtion. */
+  /* All compound entities are also fixed points of evaluation function. */
 
   // A collection of values indexed by zero-based integers.
   create('array')
@@ -5556,7 +5642,7 @@ module.exports = function () {
   Object$.prototype = $.object.proto
 
   /*
-    The Evoluation.
+    The Evolution.
   */
   // Class is a meta type to create more types.
   var $Class = naming(Object.create(Type), 'class')
@@ -5598,7 +5684,6 @@ module.exports = function () {
     return value
   }
 
-  $void.defineTypeProperty = defineTypeProperty
   function defineTypeProperty (proto, type) {
     return defineProperty(proto, 'type', type)
   }
@@ -5663,6 +5748,12 @@ module.exports = function ($void) {
   $export($, '{', sharedSymbolOf('{'))
   $export($, '}', sharedSymbolOf('}'))
 
+  // logical operators
+  $export($, '&&', sharedSymbolOf('&&'))
+  $export($, 'and', sharedSymbolOf('and'))
+  $export($, '||', sharedSymbolOf('||'))
+  $export($, 'or', sharedSymbolOf('or'))
+
   // other pure symbols
   $export($, 'else', sharedSymbolOf('else'))
 
@@ -5677,7 +5768,7 @@ module.exports = function ($void) {
     'bool', 'string', 'number', 'date', 'range',
     'symbol', 'tuple',
     'operator', 'lambda', 'function',
-    'array', 'iterator', 'object', 'class'
+    'array', 'iterator', 'promise', 'object', 'class'
   ]
   for (var i = 0; i < typeNames.length; i++) {
     sharedSymbolOf(typeNames[i])
@@ -6293,18 +6384,28 @@ function createValueOf ($void, parse, parseInteger) {
   }
 }
 
+function safeIntValueOf (number) {
+  var intValue = Number.isSafeInteger(number) ? number
+    : isNaN(number) ? 0
+      : number >= Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER
+        : number <= Number.MIN_SAFE_INTEGER ? Number.MIN_SAFE_INTEGER
+          : Math.trunc(number)
+  return intValue === 0 ? 0 : intValue
+}
+
 function createIntValueOf ($void, parse) {
   return function (input, defaultValue) {
     var result
     if (typeof input === 'string') {
       result = parse(input)
     } else if (typeof input === 'number') {
-      result = Math.trunc(input)
+      result = input === 0 ? 0 : Math.trunc(input)
     } else if (typeof input === 'boolean') {
       return input ? 1 : 0
     }
     return Number.isSafeInteger(result) ? result
-      : Number.isSafeInteger(defaultValue) ? defaultValue : 0
+      : Number.isSafeInteger(defaultValue) ? defaultValue
+        : safeIntValueOf(result)
   }
 }
 
@@ -6397,7 +6498,6 @@ module.exports = function ($void) {
   var Symbol$ = $void.Symbol
   var copyType = $void.copyType
   var protoValueOf = $void.protoValueOf
-  var defineTypeProperty = $void.defineTypeProperty
 
   // the value range and constant values.
   copyType(Type, Number, {
@@ -6444,8 +6544,8 @@ module.exports = function ($void) {
   var parseInteger = link(Type, 'parse-int', createIntParser($void), true)
 
   // get a number value from the input
-  var valueOf = link(
-    Type, 'of', createValueOf($void, parse, parseInteger), true
+  var valueOf = link(Type, 'of',
+    createValueOf($void, parse, parseInteger), true
   )
 
   // get an integer value from the input
@@ -6490,15 +6590,16 @@ module.exports = function ($void) {
 
   // convert to special sub-types
   link(proto, 'as-int', function () {
-    var intValue = Number.isSafeInteger(this) ? this
-      : isNaN(this) ? 0
-        : this >= Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER
-          : this <= Number.MIN_SAFE_INTEGER ? Number.MIN_SAFE_INTEGER
-            : Math.trunc(this)
-    return intValue === 0 ? 0 : intValue
+    return safeIntValueOf(this)
   })
   link(proto, 'as-bits', function () {
     return this >> 0
+  })
+
+  // helpers of zero-based indexing.
+  link(proto, ['th', 'st', 'nd', 'rd'], function () {
+    var index = safeIntValueOf(this)
+    return index >= 0 ? (index - 1) : index
   })
 
   // support basic arithmetic operations
@@ -6544,8 +6645,8 @@ module.exports = function ($void) {
   })
 
   // support ordering logic - comparable
-  // For uncomparable entities, comparison result is consistent with the Equivalence.
-  // Uncomparable state is indicated by a null and is taken as inequivalent.
+  // For incomparable entities, comparison result is consistent with the Equivalence.
+  // incomparable state is indicated by a null and is taken as nonequivalent.
   var compare = link(proto, 'compare', function (another) {
     return typeof another !== 'number' ? null
       : this === another ? 0 // two same valid values.
@@ -6656,9 +6757,6 @@ module.exports = function ($void) {
 
   // export type indexer.
   link(Type, 'indexer', indexer)
-
-  // inject type
-  defineTypeProperty(Number.prototype, Type)
 }
 
 
@@ -6689,7 +6787,6 @@ module.exports = function ($void) {
   var protoValueOf = $void.protoValueOf
   var encodeFieldName = $void.encodeFieldName
   var EncodingContext$ = $void.EncodingContext
-  var defineTypeProperty = $void.defineTypeProperty
 
   // create an empty object.
   var createObject = link(Type, 'empty', Object.create.bind(Object, Type.proto))
@@ -6956,9 +7053,6 @@ module.exports = function ($void) {
 
   // export type indexer.
   link(Type, 'indexer', indexer)
-
-  // inject type
-  defineTypeProperty(Object.prototype, Type)
 }
 
 
@@ -7004,7 +7098,7 @@ module.exports = function ($void) {
 "use strict";
 /* WEBPACK VAR INJECTION */(function(process) {
 
-function ingoreUnhandledRejectionsBy (filter) {
+function ignoreUnhandledRejectionsBy (filter) {
   if (typeof window !== 'undefined') {
     window.addEventListener('unhandledrejection', function (event) {
       var detail = event.promise ? event
@@ -7033,7 +7127,6 @@ module.exports = function ($void) {
   var isApplicable = $void.isApplicable
   var protoValueOf = $void.protoValueOf
   var sharedSymbolOf = $void.sharedSymbolOf
-  var defineTypeProperty = $void.defineTypeProperty
 
   function hasExcuse (excuse) {
     return typeof excuse !== 'undefined' && excuse !== null
@@ -7159,7 +7252,7 @@ module.exports = function ($void) {
     return function (waiting) {
       return waiting && hasExcuse(waiting.excuse)
         // the overall promise will reject immediately if found an tolerated
-        // rejection, since a parallelizing promise cannot react to it.
+        // rejection, since a parallel promise cannot react to it.
         ? rejectWith(waiting.excuse)
         // otherwise, the current promise's result will be taken into account in turn.
         : awaitFor(promise, next)
@@ -7198,8 +7291,8 @@ module.exports = function ($void) {
   // the empty value which has been resolved to null.
   var empty = link(Type, 'empty', Promise$.resolve(null))
 
-  // guard sugly promises to ingore unhandled rejections.
-  ingoreUnhandledRejectionsBy(function (promise, excuse) {
+  // guard sugly promises to ignore unhandled rejections.
+  ignoreUnhandledRejectionsBy(function (promise, excuse) {
     // create warnings
     return promise.excusable === true
   })
@@ -7247,12 +7340,12 @@ module.exports = function ($void) {
     return promises.length > 0 ? assemble(Promise$.all(promises)) : empty
   }, true))
 
-  // the array argument version of (promise of-all promisings)
-  link(Type, 'all', function (promisings) {
-    if (!Array.isArray(promisings)) {
+  // the array argument version of (promise of-all promising, ...)
+  link(Type, 'all', function (promisingList) {
+    if (!Array.isArray(promisingList)) {
       return empty
     }
-    var promises = makePromises(promisings)
+    var promises = makePromises(promisingList)
     return promises.length > 0 ? assemble(Promise$.all(promises)) : empty
   }, true)
 
@@ -7264,12 +7357,12 @@ module.exports = function ($void) {
       : promises.length > 0 ? promises[0] : nothing
   }, true))
 
-  // the array argument version of (promise of-any promisings)
-  link(Type, 'any', function (promisings) {
-    if (!Array.isArray(promisings)) {
+  // the array argument version of (promise of-any promising, ...)
+  link(Type, 'any', function (promisingList) {
+    if (!Array.isArray(promisingList)) {
       return nothing
     }
-    var promises = makePromises(promisings)
+    var promises = makePromises(promisingList)
     return promises.length > 1 ? assemble(Promise$.race(promises))
       : promises.length > 0 ? promises[0] : nothing
   }, true)
@@ -7339,9 +7432,6 @@ module.exports = function ($void) {
 
   // export type indexer.
   link(Type, 'indexer', indexer)
-
-  // inject function as the default type for native functions.
-  defineTypeProperty(Promise$.prototype, Type)
 }
 
 /* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../../node_modules/process/browser.js */ "./node_modules/process/browser.js")))
@@ -7508,7 +7598,6 @@ module.exports = function ($void) {
   var Symbol$ = $void.Symbol
   var thisCall = $void.thisCall
   var protoValueOf = $void.protoValueOf
-  var defineTypeProperty = $void.defineTypeProperty
 
   // the empty value
   link(Type, 'empty', '')
@@ -7519,7 +7608,7 @@ module.exports = function ($void) {
     if (typeof value === 'undefined') {
       return ''
     }
-    // concat the trimed values of strings and to-string results of non-strings.
+    // concat the trimmed values of strings and to-string results of non-strings.
     var result = []
     for (var i = 0; i < arguments.length; i++) {
       var str = arguments[i]
@@ -7560,7 +7649,7 @@ module.exports = function ($void) {
       ? this.length > 0 ? this.charAt(0) : null
       : this.substr(0, count >> 0)
   })
-  // try to find the index of the first occurence of value.
+  // try to find the index of the first occurrence of value.
   link(proto, 'first-of', function (value, from) {
     from >>= 0
     return this.indexOf(value, from < 0 ? from + this.length : from)
@@ -7571,7 +7660,7 @@ module.exports = function ($void) {
       ? this.length > 0 ? this.charAt(this.length - 1) : null
       : this.substr(Math.max(0, this.length - (count >>= 0)), count)
   })
-  // retrieve the last char or the index of the last occurence of value.
+  // retrieve the last char or the index of the last occurrence of value.
   link(proto, 'last-of', function (value, from) {
     return typeof value === 'undefined' ? -1
       : typeof value !== 'string' || !value ? this.length
@@ -7638,11 +7727,11 @@ module.exports = function ($void) {
         typeof newValue === 'string' ? newValue : ''
       )
   })
-  link(proto, 'to-upper', function (localed) {
-    return localed === true ? this.toLocaleUpperCase() : this.toUpperCase()
+  link(proto, 'to-upper', function (localized) {
+    return localized === true ? this.toLocaleUpperCase() : this.toUpperCase()
   })
-  link(proto, 'to-lower', function (localed) {
-    return localed === true ? this.toLocaleLowerCase() : this.toLowerCase()
+  link(proto, 'to-lower', function (localized) {
+    return localized === true ? this.toLocaleLowerCase() : this.toLowerCase()
   })
 
   // combination and splitting of strings
@@ -7692,7 +7781,18 @@ module.exports = function ($void) {
     return result
   })
   link(proto, 'split', function (value) {
-    return typeof value !== 'string' || value.length < 1 ? [this] : this.split(value)
+    // the original string.split('') logic is disabled here and
+    // it will behave like string.split().
+    return typeof value !== 'string' || value.length < 1 ? [this]
+      : this.split(value)
+  })
+
+  // explicitly and safely convert a string to an array of chars
+  link(proto, 'as-chars', typeof Array.from === 'function' ? function () {
+    return Array.from(this)
+  } : function () {
+    // polyfill from Babel.
+    return this.split(/(?=(?:[\0-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]))/)
   })
 
   // get a character's unicode value by its offset in this string.
@@ -7750,9 +7850,6 @@ module.exports = function ($void) {
 
   // export type indexer.
   link(Type, 'indexer', indexer)
-
-  // inject type
-  defineTypeProperty(String.prototype, Type)
 }
 
 
@@ -7790,10 +7887,10 @@ module.exports = function ($void) {
   // the empty value.
   var empty = link(Type, 'empty', sharedSymbolOf(''))
 
-  // a sepcial symbol to indicate "etc." or "more" for parser and operator
+  // a special symbol to indicate "etc." or "more" for parser and operator
   link(Type, 'etc', sharedSymbolOf('...'))
 
-  // a sepcial symbol to indicate "all" or "any" for parser and operator
+  // a special symbol to indicate "all" or "any" for parser and operator
   link(Type, 'all', sharedSymbolOf('*'))
   link(Type, 'any', sharedSymbolOf('?'))
 
@@ -7811,7 +7908,7 @@ module.exports = function ($void) {
   link(Type, 'local', sharedSymbolOf('local'))
   link(Type, 'locon', sharedSymbolOf('locon'))
 
-  // symbols for common punctuations
+  // symbols for common punctuation
   link(Type, 'escape', sharedSymbolOf('\\'))
   link(Type, 'begin', sharedSymbolOf('('))
   link(Type, 'end', sharedSymbolOf(')'))
@@ -8262,9 +8359,9 @@ module.exports = function ($void) {
   var Null = $void.null
   var Symbol$ = $void.Symbol
   var link = $void.link
+  var typeOf = $void.typeOf
   var bindThis = $void.bindThis
   var isApplicable = $void.isApplicable
-  var ownsProperty = $void.ownsProperty
   var protoValueOf = $void.protoValueOf
   var sharedSymbolOf = $void.sharedSymbolOf
 
@@ -8277,10 +8374,10 @@ module.exports = function ($void) {
 
   // Type Verification: Any non-empty value is an instance of its type.
   link(proto, ['is-a', 'is-an'], function (type) {
-    return this.type === type
+    return typeOf(this) === type
   })
   link(proto, ['is-not-a', 'is-not-an'], function (type) {
-    return this.type !== type
+    return typeOf(this) !== type
   })
 
   // Emptiness needs to be customized by each type.
@@ -8290,7 +8387,7 @@ module.exports = function ($void) {
   // Representation and Description need be customized by each type.
 
   // Indexer: default readonly accessor for all types.
-  // all value types' protos must provide a customized indexer.
+  // all value types' proto must provide a customized indexer.
   var indexer = link(proto, ':', function (index) {
     var name = typeof index === 'string' ? index
       : index instanceof Symbol$ ? index.key : ''
@@ -8309,14 +8406,7 @@ module.exports = function ($void) {
   link(Type, 'empty', Type)
 
   // Retrieve the real type of an entity.
-  var typeOf = link(Type, 'of', function (entity) {
-    var proto
-    return entity === null || typeof entity === 'undefined' ? null
-      : typeof entity === 'object' && ownsProperty(entity, 'type')
-        ? (proto = Object.getPrototypeOf(entity)) === null
-          ? $Object : proto.type
-        : entity.type
-  }, true)
+  link(Type, 'of', typeOf, true)
 
   // Retrieve the indexer for this type's instances.
   link(Type, 'indexer', indexer)
@@ -8420,15 +8510,23 @@ function createEmptyOperation () {
 
 module.exports = function ($void) {
   var $ = $void.$
-  var $Type = $.type
   var $Tuple = $.tuple
+  var $Bool = $.bool
+  var $Date = $.date
+  var $Number = $.number
+  var $String = $.string
+  var $Object = $.object
+  var $Array = $.array
   var $Lambda = $.lambda
   var $Function = $.function
-  var $Object = $.object
+  var $Operator = $.operator
+  var $Promise = $.promise
   var Null = $void.null
+  var Type$$ = $void.Type$
   var Tuple$ = $void.Tuple
   var Object$ = $void.Object
   var Symbol$ = $void.Symbol
+  var Promise$ = $void.Promise
   var operator = $void.operator
   var ClassType$ = $void.ClassType
   var isApplicable = $void.isApplicable
@@ -8448,6 +8546,56 @@ module.exports = function ($void) {
     Object.prototype.hasOwnProperty
   )
   $void.ownsProperty = ownsProperty
+
+  // ensure the runtime bind can be safely called
+  var safelyBind = Function.prototype.call.bind(
+    Function.prototype.bind
+  )
+  $void.safelyBind = safelyBind
+
+  // support native new operator on a constructor function
+  var newInstance = function (A, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q) {
+    switch (arguments.length) {
+      case 0: return null
+      case 1: return new A()
+      case 2: return new A(b)
+      case 3: return new A(b, c)
+      case 4: return new A(b, c, d)
+      case 5: return new A(b, c, d, e)
+      case 6: return new A(b, c, d, e, f)
+      case 7: return new A(b, c, d, e, f, g)
+      case 8: return new A(b, c, d, e, f, g, h)
+      case 9: return new A(b, c, d, e, f, g, h, i)
+      case 10: return new A(b, c, d, e, f, g, h, i, j)
+      case 11: return new A(b, c, d, e, f, g, h, i, j, k)
+      case 12: return new A(b, c, d, e, f, g, h, i, j, k, l)
+      case 13: return new A(b, c, d, e, f, g, h, i, j, k, l, m)
+      case 14: return new A(b, c, d, e, f, g, h, i, j, k, l, m, n)
+      case 15: return new A(b, c, d, e, f, g, h, i, j, k, l, m, n, o)
+      case 16: return new A(b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+      default: return new A(b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q)
+    }
+  }
+  $void.newInstance = newInstance
+
+  // safe copy all members from a generic object or function source to a target
+  // object. To generate "do" and "new" operations for a function source.
+  var safelyAssign = function (target, source) {
+    for (var key in source) {
+      var value = source[key]
+      target[key] = typeof value !== 'function' ? value
+        : safelyBind(value, source)
+    }
+    if (typeof source === 'function') {
+      target.call = safelyBind(source, null)
+      // If the source have a 'new' function or overriding 'call', it will be
+      // just overridden by the generated.
+      // This behavior can be changed if it's really worthy in future.
+      target.new = newInstance.bind(null, source)
+    }
+    return target
+  }
+  $void.safelyAssign = safelyAssign
 
   // make sure a file uri has correct sugly extension
   $void.appendExt = function (path) {
@@ -8518,12 +8666,41 @@ module.exports = function ($void) {
 
   // to check if an value is a compatible object.
   $void.isObject = function (obj) {
-    return obj instanceof Object$ || (!!obj && obj.type === $Object)
+    return obj instanceof Object$ || typeOf(obj) === $Object
   }
+
+  // retrieve the real type of an entity.
+  function typeOf (entity) {
+    if (entity === null || typeof entity === 'undefined') {
+      return null
+    }
+    switch (typeof entity) {
+      case 'boolean':
+        return $Bool
+      case 'number':
+        return $Number
+      case 'string':
+        return $String
+      case 'function':
+        return entity.type === $Lambda ? $Lambda
+          : entity.type === $Operator ? $Operator
+            : $Function
+      case 'object':
+        return entity instanceof Type$$
+          ? Object.getPrototypeOf(entity).type || $Object
+          : Array.isArray(entity) ? $Array
+            : entity instanceof Date ? $Date
+              : entity instanceof Promise$ ? $Promise
+                : $Object
+      default:
+        return null
+    }
+  }
+  $void.typeOf = typeOf
 
   // retrieve the system indexer of an entity.
   var indexerOf = $void.indexerOf = function (entity) {
-    var type = $Type.of(entity)
+    var type = typeOf(entity)
     return (type && type.indexer) || Null[':']
   }
 
@@ -8547,11 +8724,11 @@ module.exports = function ($void) {
   // try to update the name of a function or a class.
   var tryToUpdateName = $void.tryToUpdateName = function (entity, name) {
     if (typeof entity === 'function') {
-      if (!entity.$name) {
-        entity.$name = name
+      if (!entity.name || typeof entity.name !== 'string') {
+        Object.defineProperty(entity, 'name', { value: name })
       }
     } else if (entity instanceof ClassType$) {
-      if (!entity.name) {
+      if (!entity.name || typeof entity.name !== 'string') {
         entity.name = name
       }
     }
@@ -8579,14 +8756,16 @@ module.exports = function ($void) {
       // a this-bound static lambda may not be bound.
       return func
     }
-    var binding = func.bind($this)
+    var binding = safelyBind(func, $this)
     binding.this = $this
     binding.bound = func
     typeof func.code !== 'undefined' && (
       binding.code = func.code
     )
-    if (typeof func.$name === 'string') {
-      binding.$name = func.$name
+    if (typeof func.name === 'string') {
+      Object.defineProperty(binding, 'name', {
+        value: func.name
+      })
     }
     if (binding.type !== func.type) {
       binding.type = func.type
@@ -8604,8 +8783,10 @@ module.exports = function ($void) {
       if (!ownsProperty(entity, 'type')) {
         entity.type = $Lambda
       }
-      if (!entity.$name) {
-        entity.$name = typeof names === 'string' ? names : names[0]
+      if (!entity.name) {
+        Object.defineProperty(entity, 'name', {
+          value: typeof names === 'string' ? names : names[0]
+        })
       }
       if (autoBind && isApplicable(entity)) {
         entity = bindThis(owner, entity)
@@ -8631,9 +8812,11 @@ module.exports = function ($void) {
       var name = names[i]
       var entity = src[name]
       if (typeof entity === 'function') {
-        entity = entity.bind(src)
+        entity = safelyBind(entity, src)
         entity.type = $Lambda
-        entity.$name = mapping[name]
+        Object.defineProperty(entity, 'name', {
+          value: mapping[name]
+        })
       }
       target[mapping[name]] = entity
     }
@@ -8642,7 +8825,9 @@ module.exports = function ($void) {
 
   $void.prepareOperation = function (type, noop, emptyCode) {
     // the empty function
-    noop.$name = 'noop'
+    Object.defineProperty(noop, 'name', {
+      value: 'noop'
+    })
     var empty = link(type, 'empty', function () {
       return noop
     }, true)
@@ -8653,7 +8838,7 @@ module.exports = function ($void) {
     var proto = type.proto
     // return operation's name
     link(proto, 'name', function () {
-      return this.$name || ''
+      return typeof this.name === 'string' ? this.name : ''
     })
 
     // return operation's parameters
@@ -8689,7 +8874,7 @@ module.exports = function ($void) {
       return this.code || emptyCode
     })
 
-    // Desccription
+    // Description
     link(proto, 'to-string', function () {
       return (this.code || emptyCode)['to-string']()
     })
@@ -9003,7 +9188,7 @@ module.exports = function ($void) {
       return value
     }
     warn('string:unescape', '[JSON] invalid string input: ',
-      (error && error.message) || 'unknow error.', '\n', source)
+      (error && error.message) || 'unknown error.', '\n', source)
     return source.substring(1, source.length - 1)
   }, true)
 
@@ -9049,7 +9234,7 @@ module.exports = function ($void) {
         offset = counter
       }
       if (typeof offset !== 'number') {
-        warn('string:format', 'invalid offset value gets ingored',
+        warn('string:format', 'invalid offset value gets ignored',
           pattern, i, placeholder.substring(0, end))
         offset = counter
       } else if (offset >= args.length) {
@@ -9177,28 +9362,20 @@ module.exports = function ($void) {
 
   var json = $Object.empty()
   link(json, 'of', function (value, defaultJson) {
-    if (typeof value === 'undefined') {
-      return 'null'
-    }
-    if (typeof defaultJson === 'undefined') {
-      return JSON.stringify(value)
-    }
     try {
-      return JSON.stringify(value)
+      return typeof value === 'undefined' ? 'null'
+        : JSON.stringify(value, null, '  ')
     } catch (err) {
-      return defaultJson
+      return typeof defaultJson === 'undefined' ? null : defaultJson
     }
   })
 
   link(json, 'parse', function (json, defaultValue) {
-    if (typeof json !== 'string') {
-      return typeof defaultValue === 'undefined' ? null : defaultValue
-    }
     if (typeof defaultValue === 'undefined') {
-      return JSON.parse(json)
+      defaultValue = null
     }
     try {
-      return JSON.parse(json)
+      return typeof json === 'string' ? JSON.parse(json) : defaultValue
     } catch (err) {
       return defaultValue
     }
@@ -9690,6 +9867,11 @@ module.exports = function arithmetic ($void) {
   var evaluate = $void.evaluate
   var staticOperator = $void.staticOperator
 
+  staticOperator('-', function (space, clause) {
+    var value = evaluate(clause.$[1], space)
+    return typeof value === 'number' ? (-value) : -0
+  })
+
   staticOperator('++', function (space, clause) {
     var clist = clause.$
     var length = clist.length
@@ -10167,6 +10349,7 @@ module.exports = function control ($void) {
 
   var symbolElse = sharedSymbolOf('else')
   var symbolIn = sharedSymbolOf('in')
+  var symbolUnderscore = sharedSymbolOf('_')
 
   // (? sym) - resolve in global scope or original scope (in operator only).
   // (? cond true-branch false-branch)
@@ -10245,6 +10428,7 @@ module.exports = function control ($void) {
     return cond === false || cond === null || cond === 0
   }
 
+  // condition-based loop
   // (while cond ... )
   staticOperator('while', function (space, clause) {
     var clist = clause.$
@@ -10292,15 +10476,31 @@ module.exports = function control ($void) {
     return iteratorOf(clist.length > 1 ? evaluate(clist[1], space) : null)
   })
 
+  // iterator-based loop
+  // (for iterable body) - in this case, a variable name '_' is used.
+  // (for i in iterable body)
+  // (for (i, j) in iterable body)
+  staticOperator('for', function (space, clause) {
+    var clist = clause.$
+    var length = clist.length
+    if (length < 3) {
+      return null // short circuit - no loop body
+    }
+    var test = clist[2]
+    return test === symbolIn
+      ? length < 5 ? null // short circuit - no loop body
+        : forEach(space, clause, clist[1], evaluate(clist[3], space), 4)
+      : forEach(space, clause, symbolUnderscore, evaluate(clist[1], space), 2)
+  })
+
   // (for value in iterable body) OR
   // (for (value) in iterable body) OR
   // (for (key value) in iterable body)
-  function forEach (space, clause) {
+  function forEach (space, clause, fields, next, offset) {
     var clist = clause.$
     var length = clist.length
     // find out vars
     var vars
-    var fields = clist[1]
     if (fields instanceof Symbol$) {
       vars = [fields.key]
     } else if (fields instanceof Tuple$) {
@@ -10316,7 +10516,6 @@ module.exports = function control ($void) {
       vars = [] // the value is not being caught.
     }
     // evaluate the iterator
-    var next = evaluate(clist[3], space)
     next = iterateOf(next)
     if (!next) {
       return null // no iterator.
@@ -10332,7 +10531,7 @@ module.exports = function control ($void) {
         space.var(vars[i], i < values.length ? values[i] : null)
       }
       try {
-        for (var j = 4; j < length; j++) {
+        for (var j = offset; j < length; j++) {
           result = evaluate(clist[j], space)
         }
       } catch (signal) {
@@ -10353,65 +10552,6 @@ module.exports = function control ($void) {
     }
     return result
   }
-
-  // (for init test incremental body)
-  staticOperator('for', function (space, clause) {
-    var clist = clause.$
-    var length = clist.length
-    if (length < 5) {
-      return null // short circuit - no loop body
-    }
-    // prepare test
-    var test = clist[2]
-    if (test === symbolIn) {
-      return forEach(space, clause)
-    }
-    test = loopTest(space, test)
-    var staticCond = typeof test !== 'function'
-    // prepare incremental
-    var step = clist[3]
-    // execute init expression
-    var result = evaluate(clist[1], space)
-    var cflag
-    while (true) {
-      try { // test condition
-        cflag = false
-        if (staticCond) {
-          if (test) { return result }
-        } else { // break/continue can be used in condition expression.
-          var cond = test()
-          if (cond === false || typeof cond === 'undefined' || cond === null || cond === 0) {
-            break
-          }
-        }
-        // body
-        for (var i = 4; i < length; i++) {
-          result = evaluate(clist[i], space)
-        }
-        // incremental
-        cflag = true
-        evaluate(step, space)
-      } catch (signal) {
-        if (signal instanceof Signal$) {
-          if (signal.id === 'continue') {
-            result = signal.value
-            if (!cflag) {
-              // continue can be used in step and incremental. But it will not
-              // trigger incremental again even the loop indeed continues.
-              evaluate(step, space)
-            }
-            continue
-          }
-          if (signal.id === 'break') {
-            result = signal.value
-            break
-          }
-        }
-        throw signal
-      }
-    }
-    return result
-  })
 }
 
 
@@ -10528,14 +10668,14 @@ module.exports = function function_ ($void) {
   var signalOf = $void.signalOf
   var lambdaOf = $void.lambdaOf
   var functionOf = $void.functionOf
-  var staticLamdaOf = $void.staticLamdaOf
+  var staticLambdaOf = $void.staticLambdaOf
   var staticOperator = $void.staticOperator
 
   // create lambda operator
   staticOperator('=', createOperator(lambdaOf, $Lambda.noop))
 
   // create static lambda (pure function) operator - reserved
-  staticOperator('->', createOperator(staticLamdaOf, $Lambda.noop))
+  staticOperator('->', createOperator(staticLambdaOf, $Lambda.noop))
 
   // create function operator
   staticOperator('=>', createOperator(functionOf, $Function.noop))
@@ -10549,7 +10689,7 @@ module.exports = function function_ ($void) {
   // request to stop the execution of current module.
   staticOperator('exit', signalOf('exit'))
 
-  // create the implementatio
+  // create the implementation
   function createOperator (funcOf, empty) {
     return function (space, clause) {
       var clist = clause.$
@@ -10927,7 +11067,7 @@ module.exports = function import_ ($void) {
   function loadNativeModule (space, uri, module_, source, moduleUri) {
     try {
       // the native module must export a loader function.
-      var importing = $void.require(uri)
+      var importing = $void.require(uri, moduleUri, $void)
       if (typeof importing !== 'function') {
         module_.status = 400
         warn('import', 'invalid native module', source, 'at', uri)
@@ -11078,7 +11218,7 @@ module.exports = function literal ($void) {
           : objectCreate(space, clist,
             (type = evaluate(type, space)) instanceof ClassType$
               ? type // (@:a-class ...)
-              : $Object, // ingore type and treat it as a common object.
+              : $Object, // ignore type and treat it as a common object.
             3)
   })
 }
@@ -11219,6 +11359,7 @@ module.exports = function load ($void) {
 module.exports = function logical ($void) {
   var $ = $void.$
   var $Type = $.type
+  var $Bool = $.bool
   var Null = $void.null
   var link = $void.link
   var Space$ = $void.Space
@@ -11360,9 +11501,18 @@ module.exports = function logical ($void) {
     }
     return null
   }))
+
   // (non-null ?? ...) return non-null.
   link($Type.proto, '??', operator(function (space, clause, that) {
     return that
+  }))
+
+  // Boolean value verification helpers.
+  link($Bool.proto, 'fails', operator(function (space, clause, that) {
+    return !that
+  }))
+  link($Bool.proto, 'succeeds', operator(function (space, clause, that) {
+    return !!that
   }))
 }
 
@@ -11473,6 +11623,8 @@ module.exports = function quote ($void) {
 "use strict";
 
 
+var packageInfo = __webpack_require__(/*! ../../package.json */ "./package.json")
+
 module.exports = function runtime ($void) {
   var $ = $void.$
   var $export = $void.export
@@ -11481,7 +11633,7 @@ module.exports = function runtime ($void) {
   var environment = Object.assign(Object.create(null), {
     'runtime-core': 'js',
     'runtime-host': $void.isNativeHost ? 'native' : 'browser',
-    'runtime-version': '1.0.1',
+    'runtime-version': packageInfo.version,
     'is-debugging': true,
     'logging-level': 3
   })
@@ -11814,7 +11966,6 @@ module.exports = function function_ ($void) {
 
   function createLambda (params, tbody, app, modules, module_) {
     var createScope = createLambdaSpace.bind(null, app, modules, module_)
-
     var $lambda = function () {
       var scope = createScope()
       // populate arguments
@@ -11843,10 +11994,10 @@ module.exports = function function_ ($void) {
         }
       }
     }
-    return $lambda
+    return alignedWithGeneric($lambda, params.length)
   }
 
-  $void.staticLamdaOf = function staticLamdaOf (space, clause, offset) {
+  $void.staticLambdaOf = function staticLambdaOf (space, clause, offset) {
     // compile code
     var code = [$Symbol.stambda]
     var params = formatParameters(clause.$[offset++], space, 1)
@@ -11893,11 +12044,13 @@ module.exports = function function_ ($void) {
         return null
       }
     }
-    if (key !== 'this') {
-      $stambda = $stambda.bind(null)
-      $stambda.this = null
+    if (key === 'this') {
+      // this is only a fake parameter to indicate accepting a this.
+      return alignedWithGeneric($stambda, 0)
     }
-    return $stambda
+    $stambda = $stambda.bind(null)
+    $stambda.this = null
+    return alignedWithGeneric($stambda, params.length)
   }
 
   $void.functionOf = function functionOf (space, clause, offset) {
@@ -11950,7 +12103,7 @@ module.exports = function function_ ($void) {
         }
       }
     }
-    return $func
+    return alignedWithGeneric($func, params.length)
   }
 
   // to prepare a new context for redo
@@ -11986,6 +12139,19 @@ module.exports = function function_ ($void) {
       }
     }
     return args.length > 0 ? [args, new Tuple$(code)] : [[], $Tuple.empty]
+  }
+
+  function alignedWithGeneric (func, paramNo) {
+    return paramNo > 0 ? Object.defineProperties(func, {
+      length: {
+        value: paramNo
+      },
+      name: {
+        value: undefined
+      }
+    }) : Object.defineProperty(func, 'name', {
+      value: undefined
+    })
   }
 }
 
@@ -13057,7 +13223,8 @@ module.exports = function ($void) {
 
   function checkJavascript () {
     passed('JS is using the space of ' + (global ? 'global.' : 'window.'));
-    (typeof Promise === 'undefined' ? failed : passed)('Promise')
+    (typeof Promise === 'undefined' ? failed : passed)('Promise');
+    (typeof Object.defineProperty !== 'function' ? failed : passed)('Object.defineProperty')
   }
 
   function checkPolyfill () {
@@ -13283,7 +13450,7 @@ module.exports = function ($void) {
     check('object: generic', indexerOf({}) === $.object.proto[':'])
   }
 
-  function seval (expected, expr, desc) {
+  function eval_ (expected, expr, desc) {
     var result = $.eval(expr)
     var success = typeof expected === 'function' ? expected(result) : Object.is(result, expected)
     check(expr || desc, success, success || 'evaluated to a value of ' +
@@ -13292,187 +13459,187 @@ module.exports = function ($void) {
 
   function checkTypes () {
     print('\n  - Primary Types')
-    seval(null, '', '<empty>')
-    seval(null, '()')
-    seval(null, 'null')
+    eval_(null, '', '<empty>')
+    eval_(null, '()')
+    eval_(null, 'null')
 
-    seval($.type, 'type')
+    eval_($.type, 'type')
 
-    seval($.bool, 'bool')
-    seval(true, 'true')
-    seval(false, 'false')
+    eval_($.bool, 'bool')
+    eval_(true, 'true')
+    eval_(false, 'false')
 
-    seval($.string, 'string')
-    seval($.string.empty, '""')
-    seval('ABC', '"ABC"')
-    seval('ABC', '("ABC")')
-    seval(3, '("ABC" length)')
-    seval('ABCDEF', '("ABC" + "DEF")')
+    eval_($.string, 'string')
+    eval_($.string.empty, '""')
+    eval_('ABC', '"ABC"')
+    eval_('ABC', '("ABC")')
+    eval_(3, '("ABC" length)')
+    eval_('ABCDEF', '("ABC" + "DEF")')
 
-    seval($.number, 'number')
-    seval(3, '(1 + 2)')
-    seval(-1, '(1 - 2)')
-    seval(2, '(1 * 2)')
-    seval(0.5, '(1 / 2)')
+    eval_($.number, 'number')
+    eval_(3, '(1 + 2)')
+    eval_(-1, '(1 - 2)')
+    eval_(2, '(1 * 2)')
+    eval_(0.5, '(1 / 2)')
 
-    seval($.date, 'date')
-    seval(function (d) {
+    eval_($.date, 'date')
+    eval_(function (d) {
       return d instanceof Date
     }, '(date now)')
 
-    seval($.range, 'range')
-    seval(function (r) {
+    eval_($.range, 'range')
+    eval_(function (r) {
       return r.begin === 0 && r.end === 3 && r.step === 1
     }, '(0 3)')
-    seval(function (r) {
+    eval_(function (r) {
       return r.begin === 10 && r.end === 20 && r.step === 2
     }, '(10 20 2)')
 
-    seval($.symbol, 'symbol')
-    seval(function (s) {
+    eval_($.symbol, 'symbol')
+    eval_(function (s) {
       return s.key === 'x'
     }, '(` x)')
 
-    seval($.tuple, 'tuple')
-    seval(function (t) {
+    eval_($.tuple, 'tuple')
+    eval_(function (t) {
       var l = t.$
       return t instanceof $void.Tuple && l[0].key === 'x' && l[1] === 1 && l[2] === 'y' && l[3] === true
     }, '(` (x 1 "y" true))')
 
-    seval($.operator, 'operator')
-    seval(function (s) {
+    eval_($.operator, 'operator')
+    eval_(function (s) {
       return s.type === $.operator
     }, '(=? () )')
-    seval(function (s) {
+    eval_(function (s) {
       return s.type === $.operator
     }, '(=? (X Y) (+ (X) (Y).')
 
-    seval($.lambda, 'lambda')
-    seval(function (s) {
+    eval_($.lambda, 'lambda')
+    eval_(function (s) {
       return s.type === $.lambda
     }, '(= () )')
-    seval(function (s) {
+    eval_(function (s) {
       return s.type === $.lambda
     }, '(= (x y) (+ x y).')
 
-    seval($.function, 'function')
-    seval(function (s) {
+    eval_($.function, 'function')
+    eval_(function (s) {
       return s.type === $.function
     }, '(=> () )')
-    seval(function (s) {
+    eval_(function (s) {
       return s.type === $.function
     }, '(=> (x y) (+ x y).')
 
-    seval($.array, 'array')
-    seval(function (a) {
+    eval_($.array, 'array')
+    eval_(function (a) {
       return a.length === 2 && a[0] === 1 && a[1] === 2
     }, '(array of 1 2)')
-    seval(2, '((@ 10 20) length)')
-    seval(20, '((@ 10 20) 1)')
+    eval_(2, '((@ 10 20) length)')
+    eval_(20, '((@ 10 20) 1)')
 
-    seval($.object, 'object')
-    seval(function (obj) {
+    eval_($.object, 'object')
+    eval_(function (obj) {
       return obj.x === 1 && obj.y === 2
     }, '(@ x: 1 y: 2)')
-    seval(10, '((@ x: 10 y: 20) x)')
-    seval(20, '((@ x: 10 y: 20) y)')
-    seval(200, '((@ x: 10 y: 20) "y" 200)')
+    eval_(10, '((@ x: 10 y: 20) x)')
+    eval_(20, '((@ x: 10 y: 20) y)')
+    eval_(200, '((@ x: 10 y: 20) "y" 200)')
 
-    seval($.class, 'class')
-    seval(function (c) {
+    eval_($.class, 'class')
+    eval_(function (c) {
       return c.type === $.class
     }, '(@:class x: 1 y: 0)')
-    seval(function (c) {
+    eval_(function (c) {
       return c.type === $.class
     }, '(class of (@: x: 1 y: 0).')
   }
 
   function checkAssignment () {
     print('\n  - Assignment')
-    seval(1, '(let x 1)')
-    seval(2, '(let x 1) (let y 2)')
-    seval(2, '(let (x y) (@ 1 2). y')
-    seval(2, '(let (x y) (@ x: 1 y: 2). y')
-    seval(2, '(let * (@ x: 1 y: 2). y')
+    eval_(1, '(let x 1)')
+    eval_(2, '(let x 1) (let y 2)')
+    eval_(2, '(let (x y) (@ 1 2). y')
+    eval_(2, '(let (x y) (@ x: 1 y: 2). y')
+    eval_(2, '(let * (@ x: 1 y: 2). y')
 
-    seval(1, '(var x 1)')
-    seval(2, '(var x 1) (var y 2)')
-    seval(2, '(var (x y) (@ 1 2). y')
-    seval(2, '(var (x y) (@ x: 1 y: 2). y')
-    seval(2, '(var * (@ x: 1 y: 2). y')
+    eval_(1, '(var x 1)')
+    eval_(2, '(var x 1) (var y 2)')
+    eval_(2, '(var (x y) (@ 1 2). y')
+    eval_(2, '(var (x y) (@ x: 1 y: 2). y')
+    eval_(2, '(var * (@ x: 1 y: 2). y')
 
-    seval(1, '(export x 1)')
-    seval(2, '(export x 1) (export y 2)')
-    seval(2, '(export (x y) (@ x: 1 y: 2). y')
-    seval(2, '(export * (@ x: 1 y: 2). y')
+    eval_(1, '(export x 1)')
+    eval_(2, '(export x 1) (export y 2)')
+    eval_(2, '(export (x y) (@ x: 1 y: 2). y')
+    eval_(2, '(export * (@ x: 1 y: 2). y')
   }
 
   function checkOperators () {
     print('\n  - Operators')
-    seval(1, '(? true 1 0)')
-    seval(0, '(? false 1 0)')
+    eval_(1, '(? true 1 0)')
+    eval_(0, '(? false 1 0)')
 
-    seval(110, '(+ 10 100)')
-    seval(-110, '(+ -10 -100)')
+    eval_(110, '(+ 10 100)')
+    eval_(-110, '(+ -10 -100)')
 
-    seval('10100', '(+ "10" "100")')
-    seval('-10-100', '(+ "-10" "-100")')
+    eval_('10100', '(+ "10" "100")')
+    eval_('-10-100', '(+ "-10" "-100")')
 
-    seval(1, '(++)')
-    seval(-1, '(--)')
+    eval_(1, '(++)')
+    eval_(-1, '(--)')
 
-    seval(1, '(++ null)')
-    seval(-1, '(-- null)')
+    eval_(1, '(++ null)')
+    eval_(-1, '(-- null)')
 
-    seval(1, '(++ 0)')
-    seval(-1, '(-- 0)')
+    eval_(1, '(++ 0)')
+    eval_(-1, '(-- 0)')
 
-    seval(1, '(let x 0)(++ x)x')
-    seval(-1, '(let x 0)(-- x)x')
+    eval_(1, '(let x 0)(++ x)x')
+    eval_(-1, '(let x 0)(-- x)x')
 
-    seval(true, '(1 ?)')
-    seval(false, '(0 ?)')
-    seval(false, '(null ?)')
+    eval_(true, '(1 ?)')
+    eval_(false, '(0 ?)')
+    eval_(false, '(null ?)')
 
-    seval(true, '(true ? 1)')
-    seval(1, '(false ? 1)')
+    eval_(true, '(true ? 1)')
+    eval_(1, '(false ? 1)')
 
-    seval(1, '(true ? 1 0)')
-    seval(0, '(false ? 1 0)')
+    eval_(1, '(true ? 1 0)')
+    eval_(0, '(false ? 1 0)')
 
-    seval(0, '(null ?? 0)')
-    seval(false, '(false ?? 0)')
-    seval(0, '(0 ?? 1)')
-    seval('', '("" ?? 1)')
+    eval_(0, '(null ?? 0)')
+    eval_(false, '(false ?? 0)')
+    eval_(0, '(0 ?? 1)')
+    eval_('', '("" ?? 1)')
   }
 
   function checkControl () {
     print('\n  - Control')
-    seval(0, '(if true 1 0)')
-    seval(null, '(if false 1 0)')
-    seval(1, '(if true 1 else 0)')
-    seval(0, '(if false 1 else 0)')
+    eval_(0, '(if true 1 0)')
+    eval_(null, '(if false 1 0)')
+    eval_(1, '(if true 1 else 0)')
+    eval_(0, '(if false 1 else 0)')
 
-    seval(10, '(for x in (100 110) (++ i).')
-    seval(99, '(while ((++ i) < 100) i)')
-    seval(100, '(let i 0)(while ((i ++) < 100) i)')
-    seval(100, '(while ((++ i) < 100). i')
-    seval(101, '(let i 0)(while ((i ++) < 100). i')
-    seval('done', '(while ((++ i) < 100) (if (i == 10) (break "done").')
+    eval_(10, '(for x in (100 110) (++ i).')
+    eval_(99, '(while ((++ i) < 100) i)')
+    eval_(100, '(let i 0)(while ((i ++) < 100) i)')
+    eval_(100, '(while ((++ i) < 100). i')
+    eval_(101, '(let i 0)(while ((i ++) < 100). i')
+    eval_('done', '(while ((++ i) < 100) (if (i == 10) (break "done").')
   }
 
   function checkOperations () {
     print('\n  - Operations')
-    seval(21, '(let x 1) (let y 20) (let add (=? (a b) ((a) + (b). (add x y)')
+    eval_(21, '(let x 1) (let y 20) (let add (=? (a b) ((a) + (b). (add x y)')
 
-    seval(21, '(let z 100) (let add (= (x y) (x + y z). (add 1 20)')
-    seval(21, '(let z 100) (= (1 20): (x y) (x + y z).')
+    eval_(21, '(let z 100) (let add (= (x y) (x + y z). (add 1 20)')
+    eval_(21, '(let z 100) (= (1 20): (x y) (x + y z).')
 
-    seval(121, '(let z 100) (let add (=> (x y) (x + y z). (add 1 20)')
-    seval(121, '(let z 100) (=> (1 20): (x y) (x + y z).')
+    eval_(121, '(let z 100) (let add (=> (x y) (x + y z). (add 1 20)')
+    eval_(121, '(let z 100) (=> (1 20): (x y) (x + y z).')
 
-    seval(11, '(let summer (@:class add: (= () ((this x) + (this y). (let s (summer of (@ x: 1 y: 10). (s add)')
-    seval(11, '(let summer (@:class type: (@ add: (= (x y ) (+ x y). (summer add 1 10)')
+    eval_(11, '(let summer (@:class add: (= () ((this x) + (this y). (let s (summer of (@ x: 1 y: 10). (s add)')
+    eval_(11, '(let summer (@:class type: (@ add: (= (x y ) (+ x y). (summer add 1 10)')
   }
 }
 
@@ -13491,8 +13658,9 @@ module.exports = function ($void) {
 
 
 var sugly = __webpack_require__(/*! ../sugly */ "./sugly.js")
-var defaultTerm = __webpack_require__(/*! ./lib/term */ "./web/lib/term.js")
-var defaultStdout = __webpack_require__(/*! ./lib/stdout */ "./web/lib/stdout.js")
+var terminalStdin = __webpack_require__(/*! ./lib/stdin */ "./web/lib/stdin.js")
+var terminalStdout = __webpack_require__(/*! ./lib/stdout */ "./web/lib/stdout.js")
+var consoleStdout = __webpack_require__(/*! ../lib/stdout */ "./lib/stdout.js")
 var defaultLoader = __webpack_require__(/*! ../lib/loader */ "./lib/loader.js")
 
 function ensure (factory, alternative) {
@@ -13504,9 +13672,12 @@ function getAppHome () {
   return href.substring(0, href.lastIndexOf('/'))
 }
 
-module.exports = function (term, stdout, loader) {
-  term = ensure(term, defaultTerm)()
-  stdout = ensure(stdout, defaultStdout)(term)
+module.exports = function (term, stdin, stdout, loader) {
+  term = typeof term === 'object' ? term
+    : null // by default, shell mode is not available.
+  stdout = typeof stdout === 'function' ? stdout
+    : term ? terminalStdout(term)
+      : consoleStdout // web console does not support printf.
   loader = ensure(loader, defaultLoader)
 
   var $void = sugly(stdout, loader)
@@ -13538,7 +13709,7 @@ module.exports = function (term, stdout, loader) {
     return typeof context === 'function'
       ? context // a customized initializer function.
       : typeof context === 'string'
-        ? executor.bind(null, context) // an initializatoin profile.
+        ? executor.bind(null, context) // an initialization profile.
         : Array.isArray(context) ? function () {
           // a list of dependency modules
           return bootstrap.$fetch(context)
@@ -13557,9 +13728,12 @@ module.exports = function (term, stdout, loader) {
   }
 
   function shell (args, context) {
+    if (typeof stdin !== 'function' && !term) {
+      throw new TypeError('An interactive shell requires a terminal to work.')
+    }
     // generate shell agent.
     return initialize(context, function () {
-      var reader = __webpack_require__(/*! ./lib/stdin */ "./web/lib/stdin.js")($void, term)
+      var reader = ensure(stdin, terminalStdin)($void, term)
       var agent = __webpack_require__(/*! ../lib/shell */ "./lib/shell.js")($void, reader,
         __webpack_require__(/*! ./lib/process */ "./web/lib/process.js")($void)
       )
@@ -13666,25 +13840,29 @@ module.exports = function ($void, environ, exit) {
 "use strict";
 
 
-// expose the creator function by default.
-window.$void = __webpack_require__(/*! ../index */ "./web/index.js")
+var term = __webpack_require__(/*! ./term */ "./web/lib/term.js")
+var $void = __webpack_require__(/*! ../index */ "./web/index.js")
 
+var next = typeof window.onload === 'function' ? window.onload : null
 window.onload = function () {
+  next && next()
+
   // generate and expose a default runner function.
-  window.$sugly = window.$void(/* term, stdout, loader */)
+  var sugly = $void(term()/*, stdin, stdout, loader */)
 
   // start shell and expose the shell's reader function.
-  var shell = window.$sugly(/* context, app (to run) or args (for shell) */)
-  shell instanceof Promise ? shell.then(function (sh) {
-    window.$shell = sh
-    console.info('shell is ready now.')
-  }) : (window.$shell = shell)
-
-  if (!window.$shell) {
-    console.info('waiting shell to be ready ...')
-  } else {
+  var init = sugly(/* context, app (to run) or args (for shell) */)
+  if (!(init instanceof Promise)) {
     console.info('shell is ready.')
+    return
   }
+
+  console.info('waiting shell to be ready ...')
+  init.then(function () {
+    console.info('shell is ready now.')
+  }, function (err) {
+    console.info('shell failed to be initialized for', err)
+  })
 }
 
 
