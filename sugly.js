@@ -1153,7 +1153,8 @@ module.exports = function (exporting) {
 
 module.exports = function (exporting, context, $void) {
   if (typeof window === 'undefined') {
-    return 'web module is only available when hosted in web browser'
+    // web can also be mocked by application to, for example, in testing.
+    return 'web module is only available in web browser.'
   }
   $void.safelyAssign(exporting, window)
   return true
@@ -3160,7 +3161,7 @@ module.exports = g;
 /*! exports provided: name, version, author, license, repository, description, main, scripts, bin, dependencies, devDependencies, default */
 /***/ (function(module) {
 
-module.exports = {"name":"sugly","version":"1.0.2","author":{"email":"leevi@nirlstudio.com","name":"Leevi Li"},"license":"MIT","repository":"nirlstudio/sugly-lang","description":"A conceptual implementation of Sugly programming language.","main":"index.js","scripts":{"test":"node . selftest","check":"node test/test.js","build":"webpack & webpack --mode=production","build-dev":"webpack","build-prod":"webpack --mode=production","clean":"rm -r dist/*","start":"webpack-dev-server --mode development"},"bin":{"sugly":"bin/sugly"},"dependencies":{"axios":">=0.19.0","colors":"^1.3.3","node-localstorage":"^1.3.1"},"devDependencies":{"hooks-webpack-plugin":"^1.0.3","shelljs":"^0.8.3","webpack":"^4.31.0","webpack-cli":"^3.3.2","webpack-dev-server":"^3.3.1"}};
+module.exports = {"name":"sugly","version":"1.0.3","author":{"email":"leevi@nirlstudio.com","name":"Leevi Li"},"license":"MIT","repository":"nirlstudio/sugly-lang","description":"A conceptual implementation of Sugly programming language.","main":"index.js","scripts":{"test":"node . selftest","check":"node test/test.js","build":"webpack","rebuild":"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack","build-dev":"webpack","build-prod":"webpack --mode=production","clean":"rm -rf dist/www; rm dist/*; rm dist/.cache*","start":"webpack-dev-server --mode development","prod":"webpack-dev-server --mode production"},"bin":{"sugly":"bin/sugly"},"dependencies":{"axios":"^0.19.0","colors":"^1.3.3","node-localstorage":"^1.3.1"},"devDependencies":{"hooks-webpack-plugin":"^1.0.3","html-webpack-plugin":"^3.2.0","shelljs":"^0.8.3","webpack":"^4.34.0","webpack-cli":"^3.3.4","webpack-dev-server":"^3.7.1"}};
 
 /***/ }),
 
@@ -3187,7 +3188,7 @@ module.exports = function sugly (stdout, loader) {
   // set the location of the runtime
   $void.runtime('home',
     typeof window === 'undefined' ? __dirname
-      : window.SUGLY_HOME || window.location.origin
+      : window.SUGLY_HOME || (window.location.origin + '/sugly')
   )
   // now we got a complete runtime.
   return $void
@@ -8580,11 +8581,13 @@ module.exports = function ($void) {
 
   // safe copy all members from a generic object or function source to a target
   // object. To generate "do" and "new" operations for a function source.
-  var safelyAssign = function (target, source) {
+  var safelyAssign = function (target, source, ownedOnly) {
     for (var key in source) {
-      var value = source[key]
-      target[key] = typeof value !== 'function' ? value
-        : safelyBind(value, source)
+      if (!ownedOnly || ownsProperty(source, key)) {
+        var value = source[key]
+        target[key] = typeof value !== 'function' ? value
+          : safelyBind(value, source)
+      }
     }
     if (typeof source === 'function') {
       target.call = safelyBind(source, null)
@@ -8966,7 +8969,7 @@ module.exports = function ($void) {
 "use strict";
 
 
-module.exports = function device ($void) {
+module.exports = function ($void) {
   var $ = $void.$
   var $Object = $.object
   var Object$ = $void.Object
@@ -9643,6 +9646,140 @@ module.exports = function ($void, stdout) {
 
 /***/ }),
 
+/***/ "./sugly/lib/suglify.js":
+/*!******************************!*\
+  !*** ./sugly/lib/suglify.js ***!
+  \******************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function hyphenize (name) {
+  var segments = name.split(/[_-\s]+/g)
+  var converted = false
+  for (var i = 0, count = segments.length; i < count; i++) {
+    var segment = escapeCamel(segments[i])
+    if (segment !== segments[i]) {
+      segments[i] = segment
+      converted = true
+    }
+  }
+  return segments.length > 1 || converted ? segments.join('-') : name
+}
+
+function escapeCamel (segment) {
+  var words = []
+  var word = ''
+  var lastIsCapital = false
+  for (var i = 0, len = segment.length; i < len; i++) {
+    var c = segment.charAt(i)
+    if (c === c.toLocaleLowerCase()) {
+      word += c
+      lastIsCapital = false
+    } else {
+      if (word && !lastIsCapital) {
+        words.push(word.toLocaleLowerCase())
+        word = ''
+      }
+      var next = ++i < len ? segment[i] : ''
+      if (!next) { // ending
+        if (lastIsCapital) {
+          words.push((word + c).toLocaleLowerCase())
+        } else {
+          words.push(c.toLocaleLowerCase())
+        }
+        word = ''
+      } else if (next !== next.toLocaleLowerCase()) {
+        // several continuous upper-cased chars, except the last one,
+        // are counted in a single word.
+        word += c; i--
+        lastIsCapital = true
+      } else {
+        word && words.push(word.toLocaleLowerCase())
+        word = c + next
+        lastIsCapital = false
+      }
+    }
+  }
+  word && words.push(word.toLocaleLowerCase())
+  return words.join('-')
+}
+
+function setter (key, value) {
+  if (!key || typeof key !== 'string') {
+    return null
+  }
+  if (typeof value !== 'undefined') {
+    return (this[key] = value)
+  }
+  delete this[key]
+  return null
+}
+
+module.exports = function ($void) {
+  var $ = $void.$
+  var $Class = $.class
+  var $Object = $.object
+  var $Function = $.function
+  var typeOf = $void.typeOf
+  var $export = $void.export
+  var ownsProperty = $void.ownsProperty
+  var safelyAssign = $void.safelyAssign
+
+  var objectOfGenericFunc = $Function.proto.generic
+
+  $export($void, '$suglify', function (src) {
+    // suglify only returns null, a string or an object.
+    if (typeof src === 'string') {
+      return hyphenize(src)
+    }
+    // accepts a generic function so that an expression like:
+    //   (suglify (func generic))
+    // can be simplified to:
+    //   (suglify func)
+    var proxy
+    var srcType = typeOf(src)
+    if (srcType === $Function) {
+      proxy = objectOfGenericFunc.call(src)
+      srcType = proxy ? $Object : null
+      if (src.bound) {
+        src = src.bound
+      }
+    }
+    // ignore common proto members.
+    var proto
+    if (srcType === $Object) {
+      proto = $Object.proto
+    } else if (typeOf(srcType) === $Class) {
+      proto = $Class.proto.proto
+    } else {
+      return null
+    }
+    if (!proxy) { // make sure all methods are bound to the original object
+      proxy = safelyAssign($Object.empty(), src, true)
+    }
+    // copy and supplement setters.
+    var target = $Object.empty()
+    target['set-'] = setter.bind(src) // common setter
+    for (var key in proxy) {
+      if (typeof proto[key] === 'undefined' || ownsProperty(src, key)) {
+        var newKey = hyphenize(key)
+        target[newKey] = proxy[key]
+        if (ownsProperty(src, key)) {
+          // a dedicated setter is only supplemented for a real field.
+          target['set-' + newKey] = setter.bind(src, key)
+        }
+      }
+    }
+    return target || src
+  })
+}
+
+
+/***/ }),
+
 /***/ "./sugly/lib/timer.js":
 /*!****************************!*\
   !*** ./sugly/lib/timer.js ***!
@@ -9664,7 +9801,7 @@ function safeDelayOf (milliseconds, defaultValue) {
       : milliseconds
 }
 
-module.exports = function timer ($void) {
+module.exports = function ($void) {
   var $ = $void.$
   var $Emitter = $.emitter
   var promiseOf = $.promise.of
@@ -10583,7 +10720,7 @@ module.exports = function load ($void) {
   var symbolFetch = sharedSymbolOf('fetch')
   var promiseOfResolved = $Promise['of-resolved']
 
-  // fetch: asychronously load a module from source.
+  // fetch: asynchronously load a module from source.
   var operator = staticOperator('fetch', function (space, clause) {
     var clist = clause.$
     if (clist.length < 2) {
@@ -10616,12 +10753,14 @@ module.exports = function load ($void) {
         return promiseOfResolved(source)
       }
     }
-    return source.endsWith('/@.s')
+    return source.endsWith('@.s')
       ? new Promise$(function (resolve, reject) {
         loader.fetch(source).then(function () {
           var result = run(source)
           if (result instanceof Promise$) {
             result.then(resolve, reject)
+          } else {
+            resolve(result)
           }
         }, reject)
       })
@@ -10898,7 +11037,7 @@ module.exports = function import_ ($void) {
     var src
     if (clist.length < 4 || clist[2] !== symbolFrom) {
       // look into current space to have the base uri.
-      src = importModule(space, space.local['-app'], space.local['-module'],
+      src = importModule(space, space.local['-app-home'], space.local['-module'],
         evaluate(clist[1], space)
       )
       // clone to protect inner exports object.
@@ -10907,8 +11046,9 @@ module.exports = function import_ ($void) {
     // (import field-or-fields from src)
     src = evaluate(clist[3], space)
     var imported = src instanceof Object$ ? src
-      : typeof src !== 'string' ? null
-        : importModule(space, space.local['-app'], space.local['-module'], src)
+      : typeof src !== 'string' ? null : importModule(
+        space, space.local['-app-home'], space.local['-module'], src
+      )
     if (typeof imported !== 'object') {
       return null // importing failed.
     }
@@ -10939,7 +11079,7 @@ module.exports = function import_ ($void) {
     return values
   })
 
-  function importModule (space, appUri, moduleUri, source) {
+  function importModule (space, appHome, moduleUri, source) {
     if (typeof source !== 'string') {
       if (source instanceof Symbol$) {
         source = source.key
@@ -10955,7 +11095,7 @@ module.exports = function import_ ($void) {
       source = source.substring(offset)
     }
     // try to locate the source in dirs.
-    var uri = type ? source : resolve(appUri, moduleUri, appendExt(source))
+    var uri = type ? source : resolve(appHome, moduleUri, appendExt(source))
     if (!uri) {
       return null
     }
@@ -10985,7 +11125,7 @@ module.exports = function import_ ($void) {
     return module_.exports
   }
 
-  function resolve (appUri, moduleUri, source) {
+  function resolve (appHome, moduleUri, source) {
     var loader = $void.loader
     var isResolved = loader.isResolved(source)
     if (!moduleUri && isResolved) {
@@ -10994,7 +11134,7 @@ module.exports = function import_ ($void) {
     }
     var dirs = isResolved ? [] : dirsOf(source,
       moduleUri && loader.dir(moduleUri),
-      loader.dir(appUri) + '/modules',
+      appHome + '/modules',
       $void.$env('home') + '/modules',
       $void.runtime('home') + '/modules'
     )
@@ -11877,8 +12017,8 @@ module.exports = function execute ($void) {
   var createAppSpace = $void.createAppSpace
   var createModuleSpace = $void.createModuleSpace
 
-  $void.execute = function execute (space, code, uri, args, mainApp) {
-    var scope = mainApp ? prepareAppSpace(uri) : createModuleSpace(uri, space)
+  $void.execute = function execute (space, code, uri, args, appHome) {
+    var scope = appHome ? prepareAppSpace(uri, appHome) : createModuleSpace(uri, space)
     scope.populate(args)
     try {
       return [evaluate(code, scope), scope]
@@ -11896,14 +12036,14 @@ module.exports = function execute ($void) {
     }
   }
 
-  function prepareAppSpace (uri) {
+  function prepareAppSpace (uri, appHome) {
     var scope = $void.bootstrap
     if (scope && scope['-app'] === uri) { // bootstrap app
       if (scope.modules[uri]) { // re-run the bootstrap app
-        scope = createAppSpace(uri)
+        scope = createAppSpace(uri, appHome)
       } // start to run bootstrap app
     } else { // a new app
-      scope = createAppSpace(uri)
+      scope = createAppSpace(uri, appHome)
     }
     scope.modules[uri] = Object.assign(Object.create(null), {
       status: 201,
@@ -12385,7 +12525,7 @@ module.exports = function run ($void) {
       return null
     }
     try {
-      return execute(null, code, uri, args, true)[0]
+      return execute(null, code, uri, args, appHome)[0]
     } catch (signal) {
       warn('run', 'invalid call to', signal.id,
         'in', text, 'from', uri, 'with', args)
@@ -12612,16 +12752,18 @@ module.exports = function space ($void) {
     }
   })
 
-  $void.createAppSpace = function (uri) {
+  $void.createAppSpace = function (uri, home) {
     var app = Object.create($)
     app['-app'] = uri
     app['-app-dir'] = $void.loader.dir(uri)
+    app['-app-home'] = home || app['-app-dir']
     app.env = $void.$env
     app.run = $void.$run
     app.interpreter = $void.$interpreter
+    app.warn = $void.$warn
     app.print = $void.$print
     app.printf = $void.$printf
-    app.warn = $void.$warn
+    app.suglify = $void.$suglify
     app.timer = $void.$timer
 
     var local = Object.create(app)
@@ -12773,6 +12915,7 @@ function initializeLib ($void, stdout) {
   __webpack_require__(/*! ./lib/json */ "./sugly/lib/json.js")($void)
   __webpack_require__(/*! ./lib/emitter */ "./sugly/lib/emitter.js")($void)
   __webpack_require__(/*! ./lib/timer */ "./sugly/lib/timer.js")($void)
+  __webpack_require__(/*! ./lib/suglify */ "./sugly/lib/suglify.js")($void)
 }
 
 function initializeRuntime ($void) {
@@ -13165,6 +13308,9 @@ module.exports = function ($void) {
   var print = $void.$print
   var printf = $void.$printf
 
+  // provide a field to print for testing purpose
+  ;(print.bound || print).nativeField = true
+
   var printInColor = function (color) {
     return function (text) {
       printf(text + '\n', color)
@@ -13301,8 +13447,8 @@ module.exports = function ($void) {
       'max', 'min'
     ])
 
-    checkFunctions($void, '[Sugly / lib / IO functions] ', [
-      '$print', '$printf', '$warn'
+    checkFunctions($void, '[Sugly / lib / app-only functions] ', [
+      '$print', '$printf', '$warn', '$suglify'
     ])
 
     checkObjects($, '[Sugly / lib / objects] ', [
@@ -13658,39 +13804,38 @@ module.exports = function ($void) {
 
 
 var sugly = __webpack_require__(/*! ../sugly */ "./sugly.js")
+var consoleTerm = __webpack_require__(/*! ./lib/console */ "./web/lib/console.js")
 var terminalStdin = __webpack_require__(/*! ./lib/stdin */ "./web/lib/stdin.js")
 var terminalStdout = __webpack_require__(/*! ./lib/stdout */ "./web/lib/stdout.js")
-var consoleStdout = __webpack_require__(/*! ../lib/stdout */ "./lib/stdout.js")
 var defaultLoader = __webpack_require__(/*! ../lib/loader */ "./lib/loader.js")
 
 function ensure (factory, alternative) {
   return typeof factory === 'function' ? factory : alternative
 }
 
-function getAppHome () {
+function getDefaultHome () {
   var href = window.location.href
   return href.substring(0, href.lastIndexOf('/'))
 }
 
 module.exports = function (term, stdin, stdout, loader) {
-  term = typeof term === 'object' ? term
-    : null // by default, shell mode is not available.
-  stdout = typeof stdout === 'function' ? stdout
-    : term ? terminalStdout(term)
-      : consoleStdout // web console does not support printf.
+  term = typeof term === 'object' ? term : consoleTerm()
+  stdout = typeof stdout === 'function' ? stdout : terminalStdout(term)
   loader = ensure(loader, defaultLoader)
 
   var $void = sugly(stdout, loader)
-  var home = getAppHome()
+  var home = getDefaultHome()
   $void.env('home', home)
   $void.env('user-home', home)
   $void.env('os', window.navigator.userAgent)
 
+  var Object$ = $void.Object
   var bootstrap = $void.createBootstrapSpace(home + '/@')
 
-  function run (app, context) {
+  var run = function (appHome, context, args, app) {
     return initialize(context, function () {
-      return $void.$run(app)
+      $void.$['-enable-console'] = enableConsole
+      return $void.$run(app || 'app', args, appHome)
     })
   }
 
@@ -13699,9 +13844,7 @@ module.exports = function (term, stdin, stdout, loader) {
     var prepared = preparing(bootstrap, $void)
     return !(prepared instanceof Promise) ? main()
       : new Promise(function (resolve, reject) {
-        prepared.then(function () {
-          resolve(main())
-        }, reject)
+        prepared.then(function () { resolve(main()) }, reject)
       })
   }
 
@@ -13727,11 +13870,14 @@ module.exports = function (term, stdin, stdout, loader) {
     })
   }
 
-  function shell (args, context) {
-    if (typeof stdin !== 'function' && !term) {
-      throw new TypeError('An interactive shell requires a terminal to work.')
-    }
-    // generate shell agent.
+  function enableConsole (context, args, profile) {
+    return shell(context || ['_@', '_profile'], args,
+      profile && typeof profile === 'string' ? profile
+        : '(var * (load "_profile"))'
+    )
+  }
+
+  function shell (context, args, profile) {
     return initialize(context, function () {
       var reader = ensure(stdin, terminalStdin)($void, term)
       var agent = __webpack_require__(/*! ../lib/shell */ "./lib/shell.js")($void, reader,
@@ -13739,15 +13885,100 @@ module.exports = function (term, stdin, stdout, loader) {
       )
       // export global shell commands
       $void.$shell['test-bootstrap'] = __webpack_require__(/*! ../test/test */ "./test/test.js")($void)
-      agent(args, term.echo)
+      if (args instanceof Object$) {
+        Object.assign($void.$shell, args)
+        args = []
+      }
+      agent(args, term.echo, profile)
       return reader.open()
     })
   }
 
-  return function sugly (context, app) {
-    return typeof app === 'string' ? run(app, context)
-      : shell(Array.isArray(app) ? app : [], context)
+  return {
+    run: run,
+    shell: shell
   }
+}
+
+
+/***/ }),
+
+/***/ "./web/lib/console.js":
+/*!****************************!*\
+  !*** ./web/lib/console.js ***!
+  \****************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function nop () {}
+
+module.exports = function () {
+  var term = {}
+  var buffer = ''
+
+  // serve stdout
+  term.print = function (text) {
+    if (buffer) {
+      text = buffer + text
+      buffer = ''
+    }
+    console.log(text)
+  }
+  term.printf = function (text) {
+    var lines = text.split('\n')
+    var ending = lines.pop()
+    if (lines.length > 0) {
+      lines[0] = buffer + lines[0]
+      buffer = ending
+      console.log(lines.join('\n'))
+    } else {
+      buffer += ending
+    }
+  }
+
+  // serve stderr
+  term.verbose = nop
+  term.info = nop
+  term.warn = nop
+  term.error = nop
+  term.debug = nop
+
+  // serve shell
+  var echos = []
+  term.echo = function (text) {
+    echos.push(text)
+  }
+
+  // serve stdin
+  var inputPrompt = '>'
+  term.prompt = function (text) {
+    text && (inputPrompt = text)
+  }
+
+  term.connect = function (reader) {
+    window['_$'] = function shell (line) {
+      if (typeof line === 'string') {
+        reader(line)
+        if (echos.length > 0) {
+          var output = echos.join('\n '); echos = []
+          return output
+        }
+        if (!inputPrompt.startsWith('>')) {
+          console.info(inputPrompt)
+        }
+      } else {
+        console.error('input is not a string:', line)
+      }
+    }
+    return reader
+  }
+  term.disconnect = function () {
+    window['_$'] = null
+  }
+  return term
 }
 
 
@@ -13843,25 +14074,17 @@ module.exports = function ($void, environ, exit) {
 var term = __webpack_require__(/*! ./term */ "./web/lib/term.js")
 var $void = __webpack_require__(/*! ../index */ "./web/index.js")
 
-var next = typeof window.onload === 'function' ? window.onload : null
-window.onload = function () {
-  next && next()
-
-  // generate and expose a default runner function.
-  var sugly = $void(term()/*, stdin, stdout, loader */)
-
-  // start shell and expose the shell's reader function.
-  var init = sugly(/* context, app (to run) or args (for shell) */)
-  if (!(init instanceof Promise)) {
-    console.info('shell is ready.')
-    return
-  }
-
-  console.info('waiting shell to be ready ...')
-  init.then(function () {
+var sugly = $void(term()/*, stdin, stdout, loader */)
+// start shell and expose the shell's reader function.
+var initializing = sugly.shell(/* context, args, profile */)
+if (!(initializing instanceof Promise)) {
+  console.info('shell is ready.')
+} else {
+  console.info('initializing shell ...')
+  initializing.then(function () {
     console.info('shell is ready now.')
   }, function (err) {
-    console.info('shell failed to be initialized for', err)
+    console.error('shell failed to be initialized for', err)
   })
 }
 
