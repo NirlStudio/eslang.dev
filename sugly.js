@@ -980,20 +980,22 @@ var loaders = []
 
 function loadDefault (moduleUri) {
   switch (moduleUri) {
+    case 'io':
+      return __webpack_require__(/*! ./io */ "./modules/io.js")
     case 'restful':
       return __webpack_require__(/*! ./restful */ "./modules/restful.js")
     case 'shell':
       return __webpack_require__(/*! ./shell */ "./modules/shell.js")
     case 'symbols':
       return __webpack_require__(/*! ./symbols */ "./modules/symbols.js")
-    case 'web':
-      return __webpack_require__(/*! ./web */ "./modules/web.js")
+    case 'window':
+      return __webpack_require__(/*! ./window */ "./modules/window.js")
     default:
       return null
   }
 }
 
-module.exports = function (moduleUri, baseUri, $void) {
+function $require (moduleUri, baseUri, $void) {
   var importing = loadDefault(moduleUri)
   if (importing) {
     return importing
@@ -1007,8 +1009,7 @@ module.exports = function (moduleUri, baseUri, $void) {
   }
   return null
 }
-
-module.exports.register = function (loader) {
+function register (loader) {
   if (typeof loader === 'function') {
     loaders.unshift(loader)
     return loader
@@ -1016,7 +1017,7 @@ module.exports.register = function (loader) {
   return null
 }
 
-module.exports.unregister = function (loader) {
+function unregister (loader) {
   for (var i = loaders.length - 1; i >= 0; i--) {
     if (loaders[i] === loader) {
       loaders.splice(i, 1)
@@ -1026,10 +1027,47 @@ module.exports.unregister = function (loader) {
   return null
 }
 
-module.exports.copy = function (exporting, source, context, $void) {
+function copy (exporting, source, context, $void) {
   context._generic = source // mostly reserved for future.
   $void.safelyAssign(exporting, source)
   return exporting
+}
+
+function use (targetUri, module_, profile) {
+  return register(function loader (moduleUri) {
+    return moduleUri !== targetUri ? null
+      // generate a default importing-all function for a native module.
+      : function importing (exporting, context, $void) {
+        copy(exporting, module_, context, $void)
+        return true
+      }
+  })
+}
+
+$require.register = register
+$require.unregister = unregister
+$require.copy = copy
+$require.use = use
+
+module.exports = $require
+
+
+/***/ }),
+
+/***/ "./modules/io.js":
+/*!***********************!*\
+  !*** ./modules/io.js ***!
+  \***********************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+module.exports = function (exporting, context, $void) {
+  // to expose all native io members.
+  Object.assign(exporting, $void.$io)
+  return true
 }
 
 
@@ -1141,10 +1179,10 @@ module.exports = function (exporting) {
 
 /***/ }),
 
-/***/ "./modules/web.js":
-/*!************************!*\
-  !*** ./modules/web.js ***!
-  \************************/
+/***/ "./modules/window.js":
+/*!***************************!*\
+  !*** ./modules/window.js ***!
+  \***************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -1153,8 +1191,8 @@ module.exports = function (exporting) {
 
 module.exports = function (exporting, context, $void) {
   if (typeof window === 'undefined') {
-    // web can also be mocked by application to, for example, in testing.
-    return 'web module is only available in web browser.'
+    // window can also be provided/mocked by an application.
+    return 'window is only available in web browser.'
   }
   $void.safelyAssign(exporting, window)
   return true
@@ -3161,7 +3199,7 @@ module.exports = g;
 /*! exports provided: name, version, author, license, repository, description, main, scripts, bin, dependencies, devDependencies, default */
 /***/ (function(module) {
 
-module.exports = {"name":"sugly","version":"1.0.3","author":{"email":"leevi@nirlstudio.com","name":"Leevi Li"},"license":"MIT","repository":"nirlstudio/sugly-lang","description":"A conceptual implementation of Sugly programming language.","main":"index.js","scripts":{"test":"node . selftest","check":"node test/test.js","build":"webpack","rebuild":"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack","build-dev":"webpack","build-prod":"webpack --mode=production","clean":"rm -rf dist/www; rm dist/*; rm dist/.cache*","start":"webpack-dev-server --mode development","prod":"webpack-dev-server --mode production"},"bin":{"sugly":"bin/sugly"},"dependencies":{"axios":"^0.19.0","colors":"^1.3.3","node-localstorage":"^1.3.1"},"devDependencies":{"hooks-webpack-plugin":"^1.0.3","html-webpack-plugin":"^3.2.0","shelljs":"^0.8.3","webpack":"^4.34.0","webpack-cli":"^3.3.4","webpack-dev-server":"^3.7.1"}};
+module.exports = JSON.parse("{\"name\":\"sugly\",\"version\":\"1.0.3\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/sugly-lang\",\"description\":\"A conceptual implementation of Sugly programming language.\",\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"sugly\":\"bin/sugly\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
 
 /***/ }),
 
@@ -5396,7 +5434,7 @@ module.exports = function ($void) {
     return bindThis(typeof $this !== 'undefined' ? $this : null, this)
   })
 
-  // retrieve generic members of a native function.
+  // JS-InterOp: retrieve generic members of a native function.
   link(proto, ['generic', '$'], function () {
     return this.code instanceof Tuple$ ? null // only for generic functions.
       : safelyAssign($Object.empty(),
@@ -6794,14 +6832,53 @@ module.exports = function ($void) {
 
   // create a new object and copy fields from source objects.
   link(Type, 'of', function () {
-    var obj = createObject()
-    for (var i = 0; i < arguments.length; i++) {
-      var source = arguments[i]
-      if (isObject(source)) {
-        Object.assign(obj, source)
-      }
+    var len = arguments.length
+    if (len < 1) {
+      return createObject()
     }
-    return obj
+    var args = [createObject()]
+    for (var i = 0; i < len; i++) {
+      isObject(arguments[i]) && args.push(arguments[i])
+    }
+    return Object.assign.apply(Object, args)
+  }, true)
+
+  // JS-InterOp: create a generic object and copy fields from source objects.
+  link(Type, 'of-generic', function () {
+    if (arguments.length < 1) {
+      return {}
+    }
+    // using native Object.assign; not filtering source types.
+    var args = Array.prototype.slice.call(arguments)
+    args.unshift({})
+    return Object.assign.apply(Object, args)
+  }, true)
+
+  // JS-InterOp: test if an object is a generic object.
+  link(Type, 'is-generic', function (obj) {
+    return isObject(obj) && Object.getPrototypeOf(obj) === Object.prototype
+  }, true)
+  link(Type, 'not-generic', function (obj) {
+    return !isObject(obj) || Object.getPrototypeOf(obj) !== Object.prototype
+  }, true)
+
+  // JS-InterOp:  create a generic object and copy fields from source objects.
+  link(Type, 'of-plain', function () {
+    if (arguments.length < 1) {
+      return Object.create(null)
+    }
+    // using native Object.assign, not filtering source types.
+    var args = Array.prototype.slice.call(arguments)
+    args.unshift(Object.create(null))
+    return Object.assign.apply(Object, args)
+  }, true)
+
+  // JS-InterOp: test if an object is a generic plain object.
+  link(Type, 'is-plain', function (obj) {
+    return isObject(obj) && Object.getPrototypeOf(obj) === null
+  }, true)
+  link(Type, 'not-plain', function (obj) {
+    return !isObject(obj) || Object.getPrototypeOf(obj) !== null
   }, true)
 
   // copy fields from source objects to the target object
@@ -9514,6 +9591,7 @@ module.exports = function ($void) {
 module.exports = function ($void, stdout) {
   var Symbol$ = $void.Symbol
   var $export = $void.export
+  var thisCall = $void.thisCall
   var staticOperator = $void.staticOperator
 
   // standard output.
@@ -9556,6 +9634,9 @@ module.exports = function ($void, stdout) {
     return lastWarning
   })
 
+  var sourceOf = function (atomValue) {
+    return thisCall(atomValue, 'to-string')
+  }
   var evaluate = function (clause, space) {
     evaluate = $void.evaluate
     return evaluate(clause, space)
@@ -9564,16 +9645,15 @@ module.exports = function ($void, stdout) {
     env = $void.env
     return env(name)
   }
-
   staticOperator('debug', function (space, clause) {
     var clist = clause.$
     if (clist.length < 2 || !space.app) {
       return null
     }
-    var args = [clause, '\n ']
+    var args = [sourceOf(clause), '\n ']
     for (var i = 1; i < clist.length; i++) {
       (i > 1) && args.push('\n ')
-      args.push(clist[i], '=', evaluate(clist[i], space))
+      args.push(sourceOf(clist[i]), '=', evaluate(clist[i], space))
     }
     if (env('is-debugging') === true) {
       stdout.debug.apply(stdout, args)
@@ -10198,7 +10278,7 @@ module.exports = function assignment ($void) {
   var symbolAll = $Symbol.all
   var Tuple$ = $void.Tuple
   var Symbol$ = $void.Symbol
-  var Object$ = $void.Object
+  var isObject = $void.isObject
   var evaluate = $void.evaluate
   var staticOperator = $void.staticOperator
   var tryToUpdateName = $void.tryToUpdateName
@@ -10264,12 +10344,12 @@ module.exports = function assignment ($void) {
           return space[method](sym.key, tryToUpdateName(values, sym.key))
         }
         // (var * obj)
-        if (values instanceof Object$) {
+        if (isObject(values)) {
           names = Object.getOwnPropertyNames(values)
           for (i = 0; i < names.length; i++) {
             name = names[i]
             value = values[name]
-            space[method](name, space.var(name,
+            space[method](name, space[method](name,
               typeof value === 'undefined' ? null : value
             ))
           }
@@ -10288,7 +10368,7 @@ module.exports = function assignment ($void) {
             space[method](syms[i].key, i < values.length ? values[i] : null)
           }
         }
-      } else if (values instanceof Object$) { // read fields into an array.
+      } else if (isObject(values)) { // read fields into an array.
         for (i = 0; i < syms.length; i++) {
           if (syms[i] instanceof Symbol$) {
             name = syms[i].key
@@ -10799,6 +10879,7 @@ module.exports = function load ($void) {
 
 module.exports = function function_ ($void) {
   var $ = $void.$
+  var $Tuple = $.tuple
   var $Symbol = $.symbol
   var $Lambda = $.lambda
   var $Function = $.function
@@ -10839,6 +10920,7 @@ module.exports = function function_ ($void) {
       var params
       var offset
       if (clist[1] === $Symbol.pairing) {
+        params = length > 2 ? clist[2] : $Tuple.empty
         offset = 2
       } else if (length > 2 && clist[2] === $Symbol.pairing) {
         params = clist[1]
@@ -10861,8 +10943,6 @@ module.exports = function function_ ($void) {
           args.push(evaluate(plist[i], space))
         }
         return func.apply(null, args)
-      } else if (typeof params === 'undefined') {
-        return func()
       } else {
         return func(evaluate(params, space))
       }
@@ -13804,6 +13884,7 @@ module.exports = function ($void) {
 
 
 var sugly = __webpack_require__(/*! ../sugly */ "./sugly.js")
+var loadIOProvider = __webpack_require__(/*! ./lib/io */ "./web/lib/io.js")
 var consoleTerm = __webpack_require__(/*! ./lib/console */ "./web/lib/console.js")
 var terminalStdin = __webpack_require__(/*! ./lib/stdin */ "./web/lib/stdin.js")
 var terminalStdout = __webpack_require__(/*! ./lib/stdout */ "./web/lib/stdout.js")
@@ -13824,6 +13905,9 @@ module.exports = function (term, stdin, stdout, loader) {
   loader = ensure(loader, defaultLoader)
 
   var $void = sugly(stdout, loader)
+  loadIOProvider($void)
+
+  // prepare app environment.
   var home = getDefaultHome()
   $void.env('home', home)
   $void.env('user-home', home)
@@ -13979,6 +14063,85 @@ module.exports = function () {
     window['_$'] = null
   }
   return term
+}
+
+
+/***/ }),
+
+/***/ "./web/lib/io.js":
+/*!***********************!*\
+  !*** ./web/lib/io.js ***!
+  \***********************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var tempStorage = Object.create(null)
+var tempSession = Object.create(null)
+
+function storeOf (storage) {
+  return {
+    getItem: function (key) {
+      return storage[key]
+    },
+    setItem: function (key, value) {
+      storage[key] = value
+    }
+  }
+}
+
+module.exports = function ($void) {
+  var warn = $void.$warn
+  var stringOf = $void.$.string.of
+
+  var $io = $void.$io = {}
+
+  var storage = window.localStorage || storeOf(tempStorage)
+  var session = window.sessionStorage || storeOf(tempSession)
+
+  function chooseStoreBy (path) {
+    return path.startsWith('~/') ? session : storage
+  }
+
+  function checkPath (method, path) {
+    if (path && typeof path === 'string') {
+      return true
+    }
+    warn('io:' + method, 'argument path is not a string.', [path])
+    return false
+  }
+
+  $io.read = function read (path) {
+    return checkPath('read', path) ? chooseStoreBy(path).getItem(path) : null
+  }
+
+  $io.write = function write (path, value) {
+    if (!checkPath('write', path)) {
+      return null
+    }
+    chooseStoreBy(path).setItem(path,
+      (value = typeof value === 'undefined' ? stringOf() : stringOf(value))
+    )
+    return value
+  }
+
+  $io['to-read'] = function read_ (path) {
+    return checkPath('to-read', path)
+      ? Promise.resolve(chooseStoreBy(path).getItem(path))
+      : Promise.reject(warn())
+  }
+
+  $io['to-write'] = function write_ (path, value) {
+    if (!checkPath('to-write', path)) {
+      return Promise.reject(warn())
+    }
+    chooseStoreBy(path).setItem(path,
+      (value = typeof value === 'undefined' ? stringOf() : stringOf(value))
+    )
+    return Promise.resolve(value)
+  }
 }
 
 
