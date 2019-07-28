@@ -5882,12 +5882,12 @@ module.exports = function iterate ($void) {
   }, true)
 
   var proto = Type.proto
-  // an iterator objecct is also iterable.
+  // an iterator object is also iterable.
   link(proto, 'iterate', function () {
     return this.next
   })
 
-  // an iterator objecct is also iterable.
+  // an iterator object is also iterable.
   link(proto, 'skip', function (count) {
     count >>= 0
     if (!this.next || count <= 0) {
@@ -5915,7 +5915,7 @@ module.exports = function iterate ($void) {
     return this
   })
 
-  // an iterator objecct is also iterable.
+  // an iterator object is also iterable.
   link(proto, 'keep', function (count) {
     if (!this.next) {
       return this
@@ -7858,15 +7858,20 @@ module.exports = function ($void) {
     }
     return result
   })
-  link(proto, 'split', function (value) {
-    // the original string.split('') logic is disabled here and
-    // it will behave like string.split().
-    return typeof value !== 'string' || value.length < 1 ? [this]
-      : this.split(value)
+  link(proto, 'split', function (separator) {
+    // to be symmetrical with join, replace a missing separator to a whitespace.
+    return typeof separator === 'undefined' ? this.split(' ')
+      // a non-string separator is interpreted as does-not-exist.
+      : typeof separator !== 'string' ? [this]
+        // a non-empty separator will be forwarded to native code.
+        : separator ? this.split(separator)
+          // replace default split('') to the safe version of splitting chars.
+          // this is also kind of symmetry with join.
+          : asChars.call(this)
   })
 
   // explicitly and safely convert a string to an array of chars
-  link(proto, 'as-chars', typeof Array.from === 'function' ? function () {
+  var asChars = link(proto, 'as-chars', typeof Array.from === 'function' ? function () {
     return Array.from(this)
   } : function () {
     // polyfill from Babel.
@@ -8657,7 +8662,7 @@ module.exports = function ($void) {
   $void.newInstance = newInstance
 
   // safe copy all members from a generic object or function source to a target
-  // object. To generate "do" and "new" operations for a function source.
+  // object. To generate "call" and "new" operations for a function source.
   var safelyAssign = function (target, source, ownedOnly) {
     for (var key in source) {
       if (!ownedOnly || ownsProperty(source, key)) {
@@ -8667,10 +8672,10 @@ module.exports = function ($void) {
       }
     }
     if (typeof source === 'function') {
-      target.call = safelyBind(source, null)
       // If the source have a 'new' function or overriding 'call', it will be
-      // just overridden by the generated.
+      // just overridden by the generated function.
       // This behavior can be changed if it's really worthy in future.
+      target.call = safelyBind(source, null)
       target.new = newInstance.bind(null, source)
     }
     return target
@@ -14234,8 +14239,8 @@ module.exports = function ($void, environ, exit) {
 "use strict";
 
 
-var term = __webpack_require__(/*! ./term */ "./web/lib/term.js")
 var $void = __webpack_require__(/*! ../index */ "./web/index.js")
+var term = __webpack_require__(/*! ./term */ "./web/lib/term.js")
 
 var sugly = $void(term()/*, stdin, stdout, loader */)
 // start shell and expose the shell's reader function.
