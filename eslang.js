@@ -8142,7 +8142,7 @@ module.exports = function import_ ($void) {
       var doc = $void.loader.load(uri)
       var text = doc[0]
       if (typeof text !== 'string') {
-        module_.status = 415 // unspported media type
+        module_.status = 415 // unsupported media type
         warn('import', 'failed to read', source, 'for', doc[1])
         return null
       }
@@ -8980,7 +8980,7 @@ module.exports = function evaluate ($void) {
 
 module.exports = function execute ($void) {
   var Signal$ = $void.Signal
-  var warn = $void.$.warn
+  var warn = $void.$warn
   var evaluate = $void.evaluate
   var createAppSpace = $void.createAppSpace
   var createModuleSpace = $void.createModuleSpace
@@ -9052,6 +9052,10 @@ module.exports = function function_ ($void) {
   var createFunctionSpace = $void.createFunctionSpace
   var createEmptyOperation = $void.createEmptyOperation
 
+  var alignWithGeneric = isFunctionLengthWritable()
+    ? alignWithGenericDefault
+    : alignWithGenericFallback
+
   $void.lambdaOf = function lambdaOf (space, clause, offset) {
     // compile code
     var code = [$Symbol.lambda]
@@ -9102,7 +9106,7 @@ module.exports = function function_ ($void) {
         }
       }
     }
-    return alignedWithGeneric($lambda, params.length)
+    return alignWithGeneric($lambda, params.length)
   }
 
   $void.staticLambdaOf = function staticLambdaOf (space, clause, offset) {
@@ -9154,11 +9158,11 @@ module.exports = function function_ ($void) {
     }
     if (key === 'this') {
       // this is only a fake parameter to indicate accepting a this.
-      return alignedWithGeneric($stambda, 0)
+      return alignWithGeneric($stambda, 0)
     }
     $stambda = $stambda.bind(null)
     $stambda.this = null
-    return alignedWithGeneric($stambda, params.length)
+    return alignWithGeneric($stambda, params.length)
   }
 
   $void.functionOf = function functionOf (space, clause, offset) {
@@ -9211,7 +9215,7 @@ module.exports = function function_ ($void) {
         }
       }
     }
-    return alignedWithGeneric($func, params.length)
+    return alignWithGeneric($func, params.length)
   }
 
   // to prepare a new context for redo
@@ -9249,7 +9253,19 @@ module.exports = function function_ ($void) {
     return args.length > 0 ? [args, new Tuple$(code)] : [[], $Tuple.empty]
   }
 
-  function alignedWithGeneric (func, paramNo) {
+  function isFunctionLengthWritable () {
+    var func = function () {}
+    try {
+      Object.defineProperty(func, 'length', { value: 2 })
+      return true
+    } catch (err) {
+      // fortunately, this should only happen in IE.
+      warn('runtime/function', 'function\'s length is not writable.', err)
+      return false
+    }
+  }
+
+  function alignWithGenericDefault (func, paramNo) {
     return paramNo > 0 ? Object.defineProperties(func, {
       length: {
         value: paramNo
@@ -9260,6 +9276,62 @@ module.exports = function function_ ($void) {
     }) : Object.defineProperty(func, 'name', {
       value: undefined
     })
+  }
+
+  function alignWithGenericFallback (func, paramNo) {
+    func = alignParamNumber(func)
+    return !func.name ? func : Object.defineProperty(func, 'name', {
+      value: undefined
+    })
+  }
+
+  function alignParamNumber (func, paramNo) {
+    switch (paramNo) {
+      case 1: return function (a) { return func.apply(this, arguments) }
+      case 2: return function (a, b) { return func.apply(this, arguments) }
+      case 3: return function (a, b, c) { return func.apply(this, arguments) }
+      case 4: return function (a, b, c, d) {
+        return func.apply(this, arguments)
+      }
+      case 5: return function (a, b, c, d, e) {
+        return func.apply(this, arguments)
+      }
+      case 6: return function (a, b, c, d, e, f) {
+        return func.apply(this, arguments)
+      }
+      case 7: return function (a, b, c, d, e, f, g) {
+        return func.apply(this, arguments)
+      }
+      case 8: return function (a, b, c, d, e, f, g, h) {
+        return func.apply(this, arguments)
+      }
+      case 9: return function (a, b, c, d, e, f, g, h, i) {
+        return func.apply(this, arguments)
+      }
+      case 10: return function (a, b, c, d, e, f, g, h, i, j) {
+        return func.apply(this, arguments)
+      }
+      case 11: return function (a, b, c, d, e, f, g, h, i, j, k) {
+        return func.apply(this, arguments)
+      }
+      case 12: return function (a, b, c, d, e, f, g, h, i, j, k, l) {
+        return func.apply(this, arguments)
+      }
+      case 13: return function (a, b, c, d, e, f, g, h, i, j, k, l, m) {
+        return func.apply(this, arguments)
+      }
+      case 14: return function (a, b, c, d, e, f, g, h, i, j, k, l, m, n) {
+        return func.apply(this, arguments)
+      }
+      case 15: return function (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) {
+        return func.apply(this, arguments)
+      }
+      case 16: return function (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) {
+        return func.apply(this, arguments)
+      }
+      default:
+        return func
+    }
   }
 }
 
@@ -13368,10 +13440,10 @@ module.exports = g;
 /*!**********************!*\
   !*** ./package.json ***!
   \**********************/
-/*! exports provided: name, version, author, license, repository, description, main, scripts, bin, dependencies, devDependencies, default */
+/*! exports provided: name, version, author, license, repository, description, keywords, main, scripts, bin, dependencies, devDependencies, default */
 /***/ (function(module) {
 
-module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.3\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
+module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.4\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
 
 /***/ }),
 
