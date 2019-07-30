@@ -4757,8 +4757,9 @@ module.exports = function ($void) {
   var asChars = link(proto, 'as-chars', typeof Array.from === 'function' ? function () {
     return Array.from(this)
   } : function () {
-    // polyfill from Babel.
-    return this.split(/(?=(?:[\0-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]))/)
+    return this.length < 1 ? []
+      // polyfill from Babel.
+      : this.split(/(?=(?:[\0-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]))/)
   })
 
   // get a character's unicode value by its offset in this string.
@@ -9259,8 +9260,10 @@ module.exports = function function_ ($void) {
       Object.defineProperty(func, 'length', { value: 2 })
       return true
     } catch (err) {
-      // fortunately, this should only happen in IE.
-      warn('runtime/function', 'function\'s length is not writable.', err)
+      // fortunately, this should only happen in IE, ...
+      if (err.number !== -2146823209) { // but if not, display its details.
+        warn('runtime/function', 'function\'s length is not writable.', err)
+      }
       return false
     }
   }
