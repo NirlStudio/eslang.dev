@@ -2319,10 +2319,12 @@ module.exports = function ($void) {
 
   // JS-InterOp: retrieve generic members of a native function.
   link(proto, ['generic', '$'], function () {
-    return this.code instanceof Tuple$ ? null // only for generic functions.
-      : safelyAssign($Object.empty(),
-        typeof this.bound === 'function' ? this.bound : this
-      )
+    return this['--generic'] || (
+      this.code instanceof Tuple$ ? null // only for generic functions.
+        : (this['--generic'] = safelyAssign($Object.empty(),
+          typeof this.bound === 'function' ? this.bound : this
+        ))
+    )
   })
 
   // implement applicable operation features.
@@ -9047,8 +9049,9 @@ module.exports = function function_ ($void) {
   var lambda = $void.lambda
   var stambda = $void.stambda
   var constambda = $void.constambda
-  var evaluate = $void.evaluate
+  var evaluate_ = $void.evaluate
   var function_ = $void.function
+  var ownsProperty = $void.ownsProperty
   var createLambdaSpace = $void.createLambdaSpace
   var createFunctionSpace = $void.createFunctionSpace
   var createEmptyOperation = $void.createEmptyOperation
@@ -9056,6 +9059,11 @@ module.exports = function function_ ($void) {
   var alignWithGeneric = isFunctionLengthWritable()
     ? alignWithGenericDefault
     : alignWithGenericFallback
+
+  function evaluate (tbody, scope) {
+    var retval = evaluate_(tbody, scope)
+    return ownsProperty(scope.context, 'retval') ? scope.context.retval : retval
+  }
 
   $void.lambdaOf = function lambdaOf (space, clause, offset) {
     // compile code
@@ -13446,7 +13454,7 @@ module.exports = g;
 /*! exports provided: name, version, author, license, repository, description, keywords, main, scripts, bin, dependencies, devDependencies, default */
 /***/ (function(module) {
 
-module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.4\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
+module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.6\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
 
 /***/ }),
 
