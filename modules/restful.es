@@ -3,10 +3,11 @@ const restful (import "$restful");
 # export recommended MIME types for Content-Type.
 (export mime-types (@
   "application/x-espresso",
-  "application/espresso",
-  "text/x-espresso",
-  "text/espresso",
+  "application/espresso"
 ).
+
+# use the first mime type as the default content type.
+export mime-espresso (mime-types first);
 
 # default config for an Espresso RESTful client.
 (export default-config (@
@@ -15,17 +16,18 @@ const restful (import "$restful");
   headers: (@ Accept:
     "application/x-espresso;q=0.9,
      application/espresso;q=0.8,
-     text/x-espresso;q=0.7,
-     text/espresso;q=0.6,
      application/json;q=0.5,
      */*;q=0.4"
   ).
 ).
 
+
 # check if an http message has the content-type of Espresso code/data.
 (export is-espresso (=> message
   var content-type (message headers:: content-type);
-  mime-types has (=> t (content-type starts-with t);
+  (content-type is-a string :: and
+    mime-types has (=> t (content-type starts-with t);
+  ).
 ).
 
 #( inner helper functions. )#
@@ -37,20 +39,35 @@ const restful (import "$restful");
       (@ (@ response: result, data:
         # use eval to safely parse response data
         (is-espresso result:: ? (eval (result data)), (result data).
+      ).
 ).
 
-(const crud-only (@
-  "get",   # READ one or multiple entities.
-  "post",  # CREATE a new entity.
-  "put",   # UPDATE an existing entity; or CREATE an idempotent.
-  "patch", # UPDATE an existing entity with specified fields.
-  "delete" # DELETE an existing entity.
+(const sender-of (=> (service, method)
+  var proxy (proxy-of service, method);
+  var header (@ content-type: mime-espresso);
+  (=:(proxy, header) (=> (url, data, config)
+    (if (config headers:: content-type:: is-empty)
+      let data ($data to-code:: to-string);
+      let config (object of config);
+      config "headers" (object of (config headers), header);
+    ).
+    proxy url, data, config;
+  ).
+).
+
+(const crud-ops (@
+  get: proxy-of,   # READ one or multiple entities.
+  post: sender-of, # CREATE a new entity.
+  put: sender-of,  # UPDATE an existing entity; or CREATE an idempotent.
+  patch: sender-of,# UPDATE an existing entity with specified fields.
+  delete: proxy-of # DELETE an existing entity.
 ).
 
 (const wrap (=> service
-  var agent (@ config: (service config); # expose its original config.
-  for method in crud-only, (agent: method, (proxy-of service, method);
-  #(return)# agent
+  local retval (@ config: (service config); # expose its original config.
+  (for method in crud-ops
+    retval: method, ((crud-ops: method) service, method);
+  ).
 ).
 
 # export CRUD operations on default service instance.
@@ -58,7 +75,21 @@ const restful (import "$restful");
   wrap (restful of default-config);
 ).
 
-# create an agent with a particular configuration set.
+(const copy (=> config
+  local retval (object of default-config, config);
+  retval "headers" (object of (default-config headers), (config headers);
+).
+
+# create a restful client with a particular configuration set.
 (export of (=> config
-  wrap (restful of (object of default-config, config);
+  wrap (restful of (copy config);
+).
+
+# create a JSON-based restful client.
+(export of-json (=> config
+  var service (restful of (copy config);
+  local retval (@ config: (service config); # expose its original config.
+  (for method in crud-ops
+    retval: method, (proxy-of service, method);
+  ).
 ).

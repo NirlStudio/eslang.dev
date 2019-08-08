@@ -9147,8 +9147,11 @@ module.exports = function function_ ($void) {
       var scope = createLambdaSpace()
       // populate argument
       if (key) {
-        scope.local[key] = key === 'this' ? this
-          : arguments.length > 0 ? arguments[0] : null
+        key === 'this'
+          ? (scope.context.this = this)
+          : (scope.local[key] =
+            typeof arguments[0] === 'undefined' ? null : arguments[0]
+          )
       }
       // execution
       try {
@@ -9166,8 +9169,7 @@ module.exports = function function_ ($void) {
       }
     }
     if (key === 'this') {
-      // this is only a fake parameter to indicate accepting a this.
-      return alignWithGeneric($stambda, 0)
+      return $stambda
     }
     $stambda = $stambda.bind(null)
     $stambda.this = null
