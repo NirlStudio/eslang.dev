@@ -5569,10 +5569,22 @@ module.exports = function ($void) {
   $void.safelyAssign = safelyAssign
 
   // make sure a file uri has correct espresso extension
-  $void.appendExt = function (path) {
-    return !path || typeof path !== 'string' ? path
-      : path.endsWith('.es') ? path
-        : path + '.es'
+  $void.completeFile = function (path) {
+    if (!path || typeof path !== 'string') {
+      path = ''
+    } else if (path.endsWith('/')) {
+      while (path.endsWith('/')) {
+        path = path.substring(0, path.length - 1)
+      }
+      if (path) {
+        var offset = path.length - 2
+        while (offset >= 0 && path[offset] !== '/') {
+          offset--
+        }
+        path += '/' + (offset >= 0 ? path.substring(offset + 1) : path)
+      }
+    }
+    return path.endsWith('.es') ? path : path + '.es'
   }
 
   // to retrieve or create a shared symbol.
@@ -7683,7 +7695,7 @@ module.exports = function load ($void) {
   var Tuple$ = $void.Tuple
   var Promise$ = $void.Promise
   var evaluate = $void.evaluate
-  var appendExt = $void.appendExt
+  var completeFile = $void.completeFile
   var sharedSymbolOf = $void.sharedSymbolOf
   var staticOperator = $void.staticOperator
 
@@ -7716,7 +7728,7 @@ module.exports = function load ($void) {
       warn('fetch', 'invalid resource uri to fetch.', source)
       return promiseOfResolved(source)
     }
-    source = appendExt(source)
+    source = completeFile(source)
     if (!loader.isResolved(source)) {
       source = loader.resolve(source, dirs)
       if (typeof source !== 'string') {
@@ -7985,7 +7997,7 @@ module.exports = function import_ ($void) {
   var warn = $void.$warn
   var execute = $void.execute
   var evaluate = $void.evaluate
-  var appendExt = $void.appendExt
+  var completeFile = $void.completeFile
   var sharedSymbolOf = $void.sharedSymbolOf
   var staticOperator = $void.staticOperator
 
@@ -8051,13 +8063,9 @@ module.exports = function import_ ($void) {
   })
 
   function importModule (space, appHome, moduleUri, source) {
-    if (typeof source !== 'string') {
-      if (source instanceof Symbol$) {
-        source = source.key
-      } else {
-        warn('import', 'invalid module source:', source)
-        return null
-      }
+    if (typeof source !== 'string' || !source) {
+      warn('import', 'invalid module source:', source)
+      return null
     }
     var type
     var offset = source.indexOf('$')
@@ -8066,7 +8074,8 @@ module.exports = function import_ ($void) {
       source = source.substring(offset)
     }
     // try to locate the source in dirs.
-    var uri = type ? source : resolve(appHome, moduleUri, appendExt(source))
+    var uri = type ? source // native module
+      : resolve(space, appHome, moduleUri, source)
     if (!uri) {
       return null
     }
@@ -8096,7 +8105,7 @@ module.exports = function import_ ($void) {
     return module_.exports
   }
 
-  function resolve (appHome, moduleUri, source) {
+  function resolve (space, appHome, moduleUri, source) {
     var loader = $void.loader
     var isResolved = loader.isResolved(source)
     if (!moduleUri && isResolved) {
@@ -8106,22 +8115,36 @@ module.exports = function import_ ($void) {
     var dirs = isResolved ? [] : dirsOf(source,
       moduleUri && loader.dir(moduleUri),
       appHome + '/modules',
-      $void.$env('home') + '/modules',
+      $void.$env('user-home') + '/.es/modules',
+      $void.$env('home') + '/modules', // working dir
       $void.runtime('home') + '/modules'
     )
-    var uri = loader.resolve(source, dirs)
+    var uri = loader.resolve(completeFile(source), dirs)
     if (typeof uri === 'string') {
       return uri
+    }
+    // try to load native Espresso modules.
+    if ($void.require.resolve && !isRelative(source)) {
+      uri = $void.require.resolve(source, appHome,
+        space.local['-app-dir'], $void.$env('user-home'), $void
+      )
+      if (typeof uri === 'string') {
+        return uri
+      } // else, make sure to display both warnings.
     }
     warn('import', 'failed to resolve', source, 'in', dirs)
     return null
   }
 
-  function dirsOf (source, moduleDir, appDir, homeDir, runtimeDir) {
+  function isRelative (source) {
+    return source.startsWith('./') || source.startsWith('../')
+  }
+
+  function dirsOf (source, moduleDir, appDir, userDir, homeDir, runtimeDir) {
     return moduleDir
-      ? source.startsWith('./') || source.startsWith('../')
+      ? isRelative(source)
         ? [ moduleDir ]
-        : [ appDir, homeDir, runtimeDir, moduleDir ]
+        : [ runtimeDir, appDir, userDir, homeDir ]
       : [ runtimeDir ] // for dynamic or unknown-source code.
   }
 
@@ -8354,7 +8377,7 @@ module.exports = function load ($void) {
   var warn = $void.$warn
   var execute = $void.execute
   var evaluate = $void.evaluate
-  var appendExt = $void.appendExt
+  var completeFile = $void.completeFile
   var sharedSymbolOf = $void.sharedSymbolOf
   var staticOperator = $void.staticOperator
 
@@ -8371,19 +8394,19 @@ module.exports = function load ($void) {
       return null
     }
     // look into current space to have the base uri.
-    return loadData(space, space.local['-app'], space.local['-module'],
+    return loadData(space, space.local['-app-dir'], space.local['-module'],
       evaluate(clist[1], space),
       clist.length > 2 ? evaluate(clist[2], space) : null
     )
   })
 
-  function loadData (space, appUri, moduleUri, source, args) {
+  function loadData (space, appDir, moduleUri, source, args) {
     if (!source || typeof source !== 'string') {
       warn('load', 'invalid source:', source)
       return null
     }
-    // try to locate the sourcevar uri
-    var uri = resolve(appUri, moduleUri, appendExt(source))
+    // try to locate the source uri
+    var uri = resolve(appDir, moduleUri, completeFile(source))
     if (typeof uri !== 'string') {
       return null
     }
@@ -8414,17 +8437,14 @@ module.exports = function load ($void) {
     }
   }
 
-  function resolve (appUri, moduleUri, source) {
+  function resolve (appDir, moduleUri, source) {
     if (!moduleUri) {
       warn('load', "It's forbidden to load a module", 'from an anonymous module.')
       return null
     }
     var loader = $void.loader
-    var dirs = loader.isResolved(source) ? [] : dirsOf(source,
-      loader.dir(moduleUri),
-      loader.dir(appUri),
-      $void.$env('home')
-    )
+    var dirs = loader.isResolved(source) ? []
+      : dirsOf(source, loader.dir(moduleUri), appDir)
     var uri = loader.resolve(source, dirs)
     if (typeof uri !== 'string') {
       warn('load', 'failed to resolve', source, 'in', dirs)
@@ -8437,10 +8457,10 @@ module.exports = function load ($void) {
     return null
   }
 
-  function dirsOf (source, moduleDir, appDir, homeDir) {
+  function dirsOf (source, moduleDir, appDir) {
     return source.startsWith('./') || source.startsWith('../')
       ? [ moduleDir ]
-      : [ moduleDir, appDir, homeDir, $void.runtime('home') ]
+      : [ moduleDir, appDir, $void.$env('home'), $void.runtime('home') ]
   }
 
   $void.bindOperatorLoad = function (space) {
@@ -9539,6 +9559,7 @@ module.exports = function run ($void) {
   var warn = $void.$warn
   var $export = $void.export
   var execute = $void.execute
+  var completeFile = $void.completeFile
   var atomicArrayOf = $void.atomicArrayOf
 
   // run a module from source as an application.
@@ -9552,11 +9573,9 @@ module.exports = function run ($void) {
     if (typeof appHome !== 'string' || appHome.length < 1) {
       appHome = $void.$env('home')
     }
-    if (!appSource.endsWith('.es')) {
-      appSource += '.es'
-    }
     // try to resolve the uri for source
     var loader = $void.loader
+    appSource = completeFile(appSource)
     var uri = loader.resolve(appSource, [
       appHome, $void.runtime('home')
     ])
@@ -13456,7 +13475,7 @@ module.exports = g;
 /*! exports provided: name, version, author, license, repository, description, keywords, main, scripts, bin, dependencies, devDependencies, default */
 /***/ (function(module) {
 
-module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.6\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
+module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.8\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"s-expression\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
 
 /***/ }),
 
