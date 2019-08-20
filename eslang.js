@@ -103,7 +103,7 @@ module.exports = function espresso (stdout, loader) {
   var start = __webpack_require__(/*! ./es/start */ "./es/start.js")
   var $void = start(stdout)
   // mount native module loader
-  $void.require = __webpack_require__(/*! ./modules */ "./modules/index.js")
+  $void.require = __webpack_require__(/*! ./modules */ "./modules/index.js")($void)
   // create the source loader
   $void.loader = loader($void)
   // set the location of the runtime
@@ -2146,9 +2146,8 @@ module.exports = function ($void) {
   var $Object = $.object
   var $Symbol = $.symbol
   var Tuple$ = $void.Tuple
-  var Object$ = $void.Object
   var Symbol$ = $void.Symbol
-  var typeOf = $void.typeOf
+  var isObject = $void.isObject
   var thisCall = $void.thisCall
   var sharedSymbolOf = $void.sharedSymbolOf
 
@@ -2223,9 +2222,9 @@ module.exports = function ($void) {
     encode: function (obj) {
       return typeof obj === 'undefined' || obj === null ? null
         : typeof obj === 'number' || typeof obj === 'string' ? obj
-          : (Array.isArray(obj) || typeOf(obj) === $Object ||
-            obj instanceof Object$ // class instances
-          ) ? thisCall(obj, 'to-code', this) : thisCall(obj, 'to-code')
+          : (Array.isArray(obj) || isObject(obj))
+            ? thisCall(obj, 'to-code', this)
+            : thisCall(obj, 'to-code')
     },
     end: function (obj, type, code) {
       // try to supplement type to code
@@ -5952,9 +5951,9 @@ module.exports = function ($void) {
 module.exports = function ($void) {
   var $ = $void.$
   var $Object = $.object
-  var Object$ = $void.Object
   var link = $void.link
   var $export = $void.export
+  var isObject = $void.isObject
   var thisCall = $void.thisCall
   var createClass = $void.createClass
   var isApplicable = $void.isApplicable
@@ -5976,7 +5975,7 @@ module.exports = function ($void) {
 
   // clear legacy event handler on activation.
   link(proto, 'activator', function () {
-    if (!(this.listeners instanceof Object$)) {
+    if (!isObject(this.listeners)) {
       this.listeners = $Object.empty()
       return
     }
@@ -5997,7 +5996,7 @@ module.exports = function ($void) {
   // (an-emitter on event) queries all listeners for an event
   // (an-emitter on event listener) registers a listener for the event.
   link(proto, 'on', function (event, listener) {
-    if (!(this.listeners instanceof Object$)) {
+    if (!isObject(this.listeners)) {
       return null // invalid emitter instance.
     }
     // query events
@@ -6021,7 +6020,7 @@ module.exports = function ($void) {
   // (an-emitter off event) clears all listeners for the event.
   // (an-emitter on event listener) clears a listener for the event.
   link(proto, 'off', function (event, listener) {
-    if (!(this.listeners instanceof Object$)) {
+    if (!isObject(this.listeners)) {
       return null
     }
     var i, listeners
@@ -6056,7 +6055,7 @@ module.exports = function ($void) {
   })
 
   link(proto, 'emit', function (event, args) {
-    if (!(this.listeners instanceof Object$) || typeof event !== 'string') {
+    if (!isObject(this.listeners) || typeof event !== 'string') {
       return null // invalid emitter instance.
     }
     var listeners = this.listeners[event]
@@ -7993,10 +7992,10 @@ module.exports = function import_ ($void) {
   var $Object = $.object
   var Tuple$ = $void.Tuple
   var Symbol$ = $void.Symbol
-  var Object$ = $void.Object
   var warn = $void.$warn
   var execute = $void.execute
   var evaluate = $void.evaluate
+  var isObject = $void.isObject
   var completeFile = $void.completeFile
   var sharedSymbolOf = $void.sharedSymbolOf
   var staticOperator = $void.staticOperator
@@ -8018,22 +8017,33 @@ module.exports = function import_ ($void) {
       return null
     }
     var src
-    if (clist.length < 4 || clist[2] !== symbolFrom) {
+    if (clist.length < 3 || clist[2] !== symbolFrom) {
       // look into current space to have the base uri.
-      src = importModule(space, space.local['-app-home'], space.local['-module'],
+      src = importModule(space,
+        space.local['-app-home'],
+        space.local['-module'],
         evaluate(clist[1], space)
       )
-      // clone to protect inner exports object.
-      return Object.assign($Object.empty(), src)
+      // clone to protect inner exporting object.
+      return src && Object.assign($Object.empty(), src)
     }
     // (import field-or-fields from src)
     src = evaluate(clist[3], space)
-    var imported = src instanceof Object$ ? src
-      : typeof src !== 'string' ? null : importModule(
-        space, space.local['-app-home'], space.local['-module'], src
+    var imported
+    if (isObject(src)) {
+      imported = src
+    } else if (typeof src !== 'string') {
+      warn('import', 'invalid source object or path:', src)
+      return null
+    } else {
+      imported = importModule(space,
+        space.local['-app-home'],
+        space.local['-module'],
+        src
       )
-    if (typeof imported !== 'object') {
-      return null // importing failed.
+      if (!imported) {
+        return null // importing failed.
+      }
     }
 
     // find out fields
@@ -8071,38 +8081,24 @@ module.exports = function import_ ($void) {
     var offset = source.indexOf('$')
     if (offset >= 0) {
       type = source.substring(0, ++offset)
-      source = source.substring(offset)
     }
     // try to locate the source in dirs.
-    var uri = type ? source // native module
+    var uri = type ? source.substring(offset) // native module
       : resolve(space, appHome, moduleUri, source)
     if (!uri) {
       return null
     }
     // look up it in cache.
-    var module_ = lookupInCache(space.modules, uri, moduleUri)
+    var module_ = lookupInCache(space.modules, type ? source : uri, moduleUri)
     if (module_.status) {
-      return module_.exports
+      return module_.exporting
     }
 
     module_.status = 100 // indicate loading
-    var exporting = (type ? loadNativeModule : loadModule)(
+    module_.exporting = (type ? loadNativeModule : loadModule)(
       space, uri, module_, source, moduleUri
     )
-    if (!exporting || exporting === module_.exporting) {
-      return module_.exports
-    }
-    module_.exporting = exporting
-    var keys = Object.getOwnPropertyNames(exporting)
-    for (var i = 0; i < keys.length; i++) {
-      var key = keys[i]
-      if (!/^[-_]/.test(key)) {
-        // only expose public fields.
-        // private fields are allowed to support hot-reloading
-        module_.exports[key] = exporting[key]
-      }
-    }
-    return module_.exports
+    return Object.assign(module_.exporting, module_.props)
   }
 
   function resolve (space, appHome, moduleUri, source) {
@@ -8126,7 +8122,7 @@ module.exports = function import_ ($void) {
     // try to load native Espresso modules.
     if ($void.require.resolve && !isRelative(source)) {
       uri = $void.require.resolve(source, appHome,
-        space.local['-app-dir'], $void.$env('user-home'), $void
+        space.local['-app-dir'], $void.$env('user-home')
       )
       if (typeof uri === 'string') {
         return uri
@@ -8149,21 +8145,25 @@ module.exports = function import_ ($void) {
   }
 
   function lookupInCache (modules, uri, moduleUri) {
-    var module = modules[uri]
-    if (!module) {
-      module = modules[uri] = Object.assign(Object.create(null), {
-        status: 0, // loading
-        exports: $Object.empty(),
+    var module_ = modules[uri]
+    if (!module_) {
+      module_ = modules[uri] = Object.assign(Object.create(null), {
+        status: 0, // an empty module.
+        props: Object.assign($Object.empty(), {
+          '-module': uri
+        }),
         timestamp: Date.now()
       })
-    } else if (module.status === 100) {
+    } else if (module_.status === 100) {
       warn('import', 'loop dependency when loading', uri, 'from', moduleUri)
     }
-    return module
+    return module_
   }
 
   function loadModule (space, uri, module_, source, moduleUri) {
     try {
+      // -module-dir is only meaningful for an Espresso module.
+      module_.props['-module-dir'] = $void.loader.dir(uri)
       // try to load file
       var doc = $void.loader.load(uri)
       var text = doc[0]
@@ -8181,10 +8181,10 @@ module.exports = function import_ ($void) {
       }
       // to load module
       var scope = execute(space, code, uri, {
-        this: module_.exporting // TODO: reserved to support hot-reloading
+        // in reloading, the old exporting is accessible for module code.
+        this: module_.exporting || null
       })[1]
       if (scope) {
-        // TODO: register monitoring tasks for hot-reloading.
         module_.status = 200
         return scope.exporting
       }
@@ -8201,7 +8201,7 @@ module.exports = function import_ ($void) {
   function loadNativeModule (space, uri, module_, source, moduleUri) {
     try {
       // the native module must export a loader function.
-      var importing = $void.require(uri, moduleUri, $void)
+      var importing = $void.require(uri, moduleUri)
       if (typeof importing !== 'function') {
         module_.status = 400
         warn('import', 'invalid native module', source, 'at', uri)
@@ -8209,11 +8209,10 @@ module.exports = function import_ ($void) {
       }
       var scope = $void.createModuleSpace(uri, space)
       var status = importing.call(
-        module_.exporting, // TODO: reserved to support hot reloading.
+        module_.exporting || null, // to serve reloading.
         scope.exporting, scope.context, $void
       )
       if (status === true) { // the loader can report error details
-        // TODO?: register monitoring tasks for hot-reloading.
         module_.status = 200
         return scope.exporting
       }
@@ -9867,7 +9866,9 @@ module.exports = function space ($void) {
     var app = appSpace && appSpace.app
     var local = Object.create(app || $)
     local['-module'] = uri || ''
-    local['-module-dir'] = uri ? $void.loader.dir(uri) : ''
+    if (uri && $void.loader.isResolved(uri)) {
+      local['-module-dir'] = $void.loader.dir(uri)
+    }
     var export_ = Object.create($Object.proto)
     var space = new Space$(local, null, null, export_)
     if (app) {
@@ -11251,81 +11252,84 @@ module.exports = function ($void, tracing) {
 "use strict";
 
 
-// a loader can fully control the importing process of a native module.
-var loaders = []
+module.exports = function ($void) {
+  // a loader can fully control the importing process of a native module.
+  var loaders = []
 
-function loadDefault (moduleUri) {
-  switch (moduleUri) {
-    case 'io':
-      return __webpack_require__(/*! ./io */ "./modules/io.js")
-    case 'restful':
-      return __webpack_require__(/*! ./restful */ "./modules/restful.js")
-    case 'shell':
-      return __webpack_require__(/*! ./shell */ "./modules/shell.js")
-    case 'symbols':
-      return __webpack_require__(/*! ./symbols */ "./modules/symbols.js")
-    case 'window':
-      return __webpack_require__(/*! ./window */ "./modules/window.js")
-    default:
-      return null
+  function loadDefault (moduleUri) {
+    switch (moduleUri) {
+      case 'io':
+        return __webpack_require__(/*! ./io */ "./modules/io.js")
+      case 'restful':
+        return __webpack_require__(/*! ./restful */ "./modules/restful.js")
+      case 'shell':
+        return __webpack_require__(/*! ./shell */ "./modules/shell.js")
+      case 'symbols':
+        return __webpack_require__(/*! ./symbols */ "./modules/symbols.js")
+      case 'window':
+        return __webpack_require__(/*! ./window */ "./modules/window.js")
+      default:
+        return null
+    }
   }
-}
 
-function $require (moduleUri, baseUri, $void) {
-  var importing = loadDefault(moduleUri)
-  if (importing) {
-    return importing
-  }
-  // latest loader has higher priority.
-  for (var i = loaders.length - 1; i >= 0; i--) {
-    importing = loaders[i](moduleUri, baseUri, $void)
-    if (typeof importing === 'function') {
+  function $require (moduleUri, baseUri) {
+    var importing = loadDefault(moduleUri)
+    if (importing) {
       return importing
     }
+    // latest loader has higher priority.
+    for (var i = loaders.length - 1; i >= 0; i--) {
+      importing = loaders[i](moduleUri, baseUri, $void)
+      if (typeof importing === 'function') {
+        return importing
+      }
+    }
+    return null
   }
-  return null
-}
-function register (loader) {
-  if (typeof loader === 'function') {
-    loaders.unshift(loader)
-    return loader
-  }
-  return null
-}
 
-function unregister (loader) {
-  for (var i = loaders.length - 1; i >= 0; i--) {
-    if (loaders[i] === loader) {
-      loaders.splice(i, 1)
+  function register (loader) {
+    if (typeof loader === 'function') {
+      loaders.unshift(loader)
       return loader
     }
+    return null
   }
-  return null
-}
 
-function copy (exporting, source, context, $void) {
-  context._generic = source // mostly reserved for future.
-  $void.safelyAssign(exporting, source)
-  return exporting
-}
-
-function use (targetUri, module_, profile) {
-  return register(function loader (moduleUri) {
-    return moduleUri !== targetUri ? null
-      // generate a default importing-all function for a native module.
-      : function importing (exporting, context, $void) {
-        copy(exporting, module_, context, $void)
-        return true
+  function unregister (loader) {
+    for (var i = loaders.length - 1; i >= 0; i--) {
+      if (loaders[i] === loader) {
+        loaders.splice(i, 1)
+        return loader
       }
-  })
+    }
+    return null
+  }
+
+  function copy (exporting, source, context) {
+    context._generic = source // mostly reserved for future.
+    $void.safelyAssign(exporting, source)
+    return exporting
+  }
+
+  function use (targetUri, module_, profile) {
+    return register(function loader (moduleUri) {
+      return moduleUri !== targetUri ? null
+        // generate a default importing-all function for a native module.
+        : function importing (exporting, context, $void) {
+          copy(exporting, module_, context)
+          return true
+        }
+    })
+  }
+
+  $require.register = register
+  $require.unregister = unregister
+  $require.copy = copy
+  $require.use = use
+
+  return $require
 }
-
-$require.register = register
-$require.unregister = unregister
-$require.copy = copy
-$require.use = use
-
-module.exports = $require
 
 
 /***/ }),
@@ -11467,10 +11471,10 @@ module.exports = function (exporting) {
 
 module.exports = function (exporting, context, $void) {
   if (typeof window === 'undefined') {
-    // window can also be provided/mocked by an application.
-    return 'window is only available in web browser.'
+    $void.$warn('module/window', 'window object is missing')
+  } else {
+    $void.safelyAssign(exporting, window)
   }
-  $void.safelyAssign(exporting, window)
   return true
 }
 
@@ -13475,7 +13479,7 @@ module.exports = g;
 /*! exports provided: name, version, author, license, repository, description, keywords, main, scripts, bin, dependencies, devDependencies, default */
 /***/ (function(module) {
 
-module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.8\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"s-expression\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
+module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.11\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"s-expression\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
 
 /***/ }),
 
@@ -14022,7 +14026,7 @@ module.exports = function (term, stdin, stdout, loader) {
   $void.env('user-home', home)
   $void.env('os', window.navigator.userAgent)
 
-  var Object$ = $void.Object
+  var isObject = $void.isObject
   var bootstrap = $void.createBootstrapSpace(home + '/@')
 
   var run = function (appHome, context, args, app) {
@@ -14078,7 +14082,7 @@ module.exports = function (term, stdin, stdout, loader) {
       )
       // export global shell commands
       $void.$shell['test-bootstrap'] = __webpack_require__(/*! ../test/test */ "./test/test.js")($void)
-      if (args instanceof Object$) {
+      if (isObject(args)) {
         Object.assign($void.$shell, args)
         args = []
       }
