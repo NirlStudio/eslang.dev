@@ -1366,7 +1366,8 @@ module.exports = function ($void) {
 
   // booleanize
   $void.boolValueOf = link(Type, 'of', function (value) {
-    return value !== null && value !== 0 && value !== false && typeof value !== 'undefined'
+    return typeof value !== 'undefined' &&
+      value !== null && value !== 0 && value !== false
   }, true)
 
   var proto = Type.proto
@@ -2078,7 +2079,7 @@ module.exports = function ($void) {
 //  - anything defined in type cannot be overridden in instance
 //  - object.proto.* will allow the overridden and ensure the consistency and type safe.
 
-// ployfill Map & Array.prototype.indexOf
+// polyfill Map & Array.prototype.indexOf
 var createIndex = typeof Map === 'function' ? function () {
   var index = new Map()
   return {
@@ -2647,8 +2648,9 @@ module.exports = function ($void) {
   $export($, '', null)
 
   // special empty symbols
-  $export($, '*', null)
   $export($, '...', null)
+  // a readable alias of '...'
+  $export($, 'etc', null)
 
   // constant values
   $export($, 'null', null)
@@ -2670,12 +2672,6 @@ module.exports = function ($void) {
   $export($, ']', sharedSymbolOf(']'))
   $export($, '{', sharedSymbolOf('{'))
   $export($, '}', sharedSymbolOf('}'))
-
-  // logical operators
-  $export($, '&&', sharedSymbolOf('&&'))
-  $export($, 'and', sharedSymbolOf('and'))
-  $export($, '||', sharedSymbolOf('||'))
-  $export($, 'or', sharedSymbolOf('or'))
 
   // other pure symbols
   $export($, 'else', sharedSymbolOf('else'))
@@ -2718,12 +2714,12 @@ module.exports = function iterate ($void) {
   var Tuple$ = $void.Tuple
   var Symbol$ = $void.Symbol
   var Iterator$ = $void.Iterator
-  var numberOf = $.number.of
   var link = $void.link
   var thisCall = $void.thisCall
   var boolValueOf = $void.boolValueOf
   var isApplicable = $void.isApplicable
   var protoValueOf = $void.protoValueOf
+  var numberValueOf = $void.numberValueOf
   var sharedSymbolOf = $void.sharedSymbolOf
 
   // try to get an iterator function for an entity
@@ -2938,13 +2934,13 @@ module.exports = function iterate ($void) {
 
   // sum the values of all iterations.
   link(proto, 'sum', function (base) {
-    var sum = typeof base === 'number' ? base : numberOf(base)
+    var sum = typeof base === 'number' ? base : numberValueOf(base)
     var value = this.next && this.next()
     while (typeof value !== 'undefined' && value != null) {
       if (Array.isArray(value)) {
         value = value.length > 0 ? value[0] : 0
       }
-      sum += typeof value === 'number' ? value : numberOf(value)
+      sum += typeof value === 'number' ? value : numberValueOf(value)
       value = this.next()
     }
     this.next = null
@@ -2961,7 +2957,7 @@ module.exports = function iterate ($void) {
       if (Array.isArray(value)) {
         value = value.length > 0 ? value[0] : 0
       }
-      sum += typeof value === 'number' ? value : numberOf(value)
+      sum += typeof value === 'number' ? value : numberValueOf(value)
       value = this.next()
     }
     this.next = null
@@ -3084,7 +3080,7 @@ module.exports = function iterate ($void) {
       : nil.length > 0 ? nil[0] : null
   })
 
-  // all interators will be encoded to an empty iterator.
+  // all iterators will be encoded to an empty iterator.
   var arrayProto = $Array.proto
   var symbolOf = sharedSymbolOf('of')
   var symbolIterator = sharedSymbolOf('iterator')
@@ -3211,9 +3207,9 @@ module.exports = function ($void) {
     'is', '===',
     // Equivalence: to test if two entities are equivalent in effect.
     // Equivalence logic should be implemented symmetrically.
-    // So it's different with the behaviour of NaN in JS, since an identity must be
-    // equivalent in effect with itself, or as an identity's behaviour cannot be
-    // defined by any property that's unrelevant with its effect to its environment.
+    // So it's different with the behavior of NaN in JS, since an identity must be
+    // equivalent in effect with itself, or as an identity's behavior cannot be
+    // defined by any property that's irrelevant with its effect to its environment.
     'equals', '=='
   ], function (another) {
     return Object.is(typeof this === 'undefined' ? null : this,
@@ -3239,7 +3235,7 @@ module.exports = function ($void) {
       ? 0 : null
   })
 
-  // Emptiness: null, type.proto and all protos are empty.
+  // Emptiness: null, type.proto and all prototypes are empty.
   link(Null, 'is-empty', function () {
     return true
   })
@@ -3291,7 +3287,9 @@ function createValueOf ($void, parse, parseInteger) {
   return function (input, defaultValue) {
     var value
     if (typeof input === 'string') {
-      value = input.startsWith('0x') || input.startsWith('0b') ? parseInteger(input) : parse(input)
+      value = input.startsWith('0x') || input.startsWith('0b')
+        ? parseInteger(input)
+        : parse(input)
     } else if (typeof input === 'boolean') {
       value = input ? 1 : 0
     } else if (input instanceof Date) {
@@ -3303,7 +3301,8 @@ function createValueOf ($void, parse, parseInteger) {
     } else {
       value = NaN
     }
-    return isNaN(value) && typeof defaultValue === 'number' ? defaultValue : value
+    return isNaN(value) && typeof defaultValue === 'number' ? defaultValue
+      : value
   }
 }
 
@@ -3419,6 +3418,7 @@ module.exports = function ($void) {
   var $Range = $.range
   var link = $void.link
   var Symbol$ = $void.Symbol
+  var bindThis = $void.bindThis
   var copyType = $void.copyType
   var protoValueOf = $void.protoValueOf
 
@@ -3467,12 +3467,12 @@ module.exports = function ($void) {
   var parseInteger = link(Type, 'parse-int', createIntParser($void), true)
 
   // get a number value from the input
-  var valueOf = link(Type, 'of',
-    createValueOf($void, parse, parseInteger), true
-  )
+  var valueOf = $void.numberValueOf = createValueOf($void, parse, parseInteger)
+  link(Type, 'of', bindThis(Type, valueOf), true)
 
   // get an integer value from the input
-  var intOf = link(Type, 'of-int', createIntValueOf($void, parseInteger), true)
+  var intOf = $void.intValueOf = createIntValueOf($void, parseInteger)
+  link(Type, 'of-int', bindThis(Type, intOf), true)
 
   // get an signed integer value which is stable with bitwise operation.
   link(Type, 'of-bits', function (input) {
@@ -3534,37 +3534,30 @@ module.exports = function ($void) {
   // remainder / modulus
   link(proto, '%', function (base) {
     return typeof base === 'undefined' ? this
-      : isNaN(base) || typeof base !== 'number' ? NaN
+      : typeof base !== 'number' || isNaN(base) ? NaN
         : isFinite(base) ? this % valueOf(base) : this
   })
 
   // bitwise operations
   link(proto, '&', function (value) {
-    return this & value
+    return this & (typeof value === 'number' ? value : valueOf(value))
   })
   link(proto, '|', function (value) {
-    return this | value
+    return this | (typeof value === 'number' ? value : valueOf(value))
   })
   link(proto, '^', function (value) {
-    return this ^ value
+    return this ^ (typeof value === 'number' ? value : valueOf(value))
   })
   link(proto, '<<', function (offset) {
-    offset >>= 0
-    return offset <= 0 ? this << 0
-      : offset >= 32 ? 0 : this << offset
+    return this << (typeof offset === 'number' ? offset : intOf(offset))
   })
   // signed right-shift.
   link(proto, '>>', function (offset) {
-    offset >>= 0
-    return offset <= 0 ? this >> 0
-      : offset >= 32 ? (this >> 0) >= 0 ? 0 : -1
-        : this >> offset
+    return this >> (typeof offset === 'number' ? offset : intOf(offset))
   })
   // zero-based right shift.
   link(proto, '>>>', function (offset) {
-    offset >>= 0
-    return offset <= 0 ? this >> 0
-      : offset >= 32 ? 0 : this >>> offset
+    return this >>> (typeof offset === 'number' ? offset : intOf(offset))
   })
 
   // support ordering logic - comparable
@@ -4635,11 +4628,29 @@ module.exports = function ($void) {
   link(proto, 'contains', function (str) {
     return typeof str === 'string' && (this.indexOf(str) >= 0)
   })
-  link(proto, 'starts-with', function (prefix) {
-    return typeof prefix === 'string' && this.startsWith(prefix)
+  link(proto, 'starts-with', function (prefix/*, ... */) {
+    if (typeof prefix === 'string' && this.startsWith(prefix)) {
+      return true
+    }
+    for (var i = 1, len = arguments.length; i < len; i++) {
+      prefix = arguments[i]
+      if (typeof prefix === 'string' && this.startsWith(prefix)) {
+        return true
+      }
+    }
+    return false
   })
-  link(proto, 'ends-with', function (suffix) {
-    return typeof suffix === 'string' && this.endsWith(suffix)
+  link(proto, 'ends-with', function (suffix/*, ... */) {
+    if (typeof suffix === 'string' && this.endsWith(suffix)) {
+      return true
+    }
+    for (var i = 0, len = arguments.length; i < len; i++) {
+      suffix = arguments[i]
+      if (typeof suffix === 'string' && this.endsWith(suffix)) {
+        return true
+      }
+    }
+    return false
   })
 
   // Converting
@@ -4858,7 +4869,7 @@ module.exports = function ($void) {
   // a special symbol to indicate "etc." or "more" for parser and operator
   link(Type, 'etc', sharedSymbolOf('...'))
 
-  // a special symbol to indicate "all" or "any" for parser and operator
+  // special symbols to indicate "all" and "any" for parsers and operators
   link(Type, 'all', sharedSymbolOf('*'))
   link(Type, 'any', sharedSymbolOf('?'))
 
@@ -5140,7 +5151,7 @@ module.exports = function ($void) {
       ? s.length >= this.$.length ? this : new Tuple$(s, this.plain)
       : this.plain ? blank : empty
   })
-  // find the first occurance of a value.
+  // find the first occurrence of a value.
   link(proto, 'first-of', function (value) {
     return array['first-of'].call(this.$, value)
   })
@@ -5154,12 +5165,12 @@ module.exports = function ($void) {
       ? s.length >= this.$.length ? this : new Tuple$(s, this.plain)
       : this.plain ? blank : empty
   })
-  // find the last occurance of a value.
+  // find the last occurrence of a value.
   link(proto, 'last-of', function (value) {
     return array['last-of'].call(this.$, value)
   })
 
-  // merge this tuple's items and argument values to create a new one.
+  // merge the items of this tuple and argument values to create a new one.
   link(proto, 'concat', function () {
     var list = append.apply(this.$.slice(0), arguments)
     return list.length > this.$.length ? new Tuple$(list, this.plain) : this
@@ -5354,7 +5365,7 @@ module.exports = function ($void) {
 
   // Representation and Description need be customized by each type.
 
-  // Indexer: default readonly accessor for all types.
+  // Indexer: default read-only accessor for all types.
   // all value types' proto must provide a customized indexer.
   var indexer = link(proto, ':', function (index) {
     var name = typeof index === 'string' ? index
@@ -5595,9 +5606,10 @@ module.exports = function ($void) {
 
   // generic operators cannot be overridden in program. They are interpreted
   // directly in core evaluation function.
-  function staticOperator (name, impl) {
-    // make the symbol a pure symbol.
-    $[name] = sharedSymbolOf(name)
+  function staticOperator (name, impl, entity) {
+    // export an alternative entity or make it a pure symbol.
+    typeof entity !== 'undefined' ? $export($, name, entity)
+      : ($[name] = sharedSymbolOf(name))
     // export the implementation.
     $void.staticOperators[name] = operator(impl, $Tuple.operator)
     return impl
@@ -5680,6 +5692,15 @@ module.exports = function ($void) {
   }
   $void.typeOf = typeOf
 
+  // test a boolean value of any value.
+  $void.isTruthy = function (v) {
+    return typeof v === 'undefined' || (v !== false && v !== null && v !== 0)
+  }
+
+  $void.isFalsy = function (v) {
+    return typeof v !== 'undefined' && (v === false || v === null || v === 0)
+  }
+
   // retrieve the system indexer of an entity.
   var indexerOf = $void.indexerOf = function (entity) {
     var type = typeOf(entity)
@@ -5718,7 +5739,7 @@ module.exports = function ($void) {
   }
 
   // to export an entity to a space.
-  $void.export = function (space, name, entity) {
+  function $export (space, name, entity) {
     // ensure exported names are shared.
     sharedSymbolOf(name)
     // automatically bind null for static methods
@@ -5731,6 +5752,7 @@ module.exports = function ($void) {
     }
     return (space[name] = entity)
   }
+  $void.export = $export
 
   // create a bound function from the original function or lambda.
   function bindThis ($this, func) {
@@ -6555,7 +6577,7 @@ module.exports = function ($void) {
     'random': 'random'
   })
 
-  // hotfix for Firefox, in which Math.exp(1) does not returns Math.E.
+  // hot-fix for Firefox, in which Math.exp(1) does not returns Math.E.
   isFirefox && link(math, 'exp', function exp (x) {
     return x === 1 ? Math.E : Math.exp(x)
   }, true)
@@ -6687,7 +6709,7 @@ module.exports = function ($void, stdout) {
       return null
     }
     var args = [sourceOf(clause), '\n ']
-    for (var i = 1; i < clist.length; i++) {
+    for (var i = 1, len = clist.length; i < len; i++) {
       (i > 1) && args.push('\n ')
       args.push(sourceOf(clist[i]), '=', evaluate(clist[i], space))
     }
@@ -6721,7 +6743,7 @@ module.exports = function ($void, stdout) {
     }
 
     var args = []
-    for (var i = 2; i < clist.length; i++) {
+    for (var i = 2, len = clist.length; i < len; i++) {
       args.push(evaluate(clist[i], space))
     }
     log.apply(stdout, args)
@@ -6978,7 +7000,6 @@ module.exports = function ($void) {
 module.exports = function arithmetic ($void) {
   var $ = $void.$
   var $Number = $.number
-  var mod = $Number.proto['%']
   var link = $void.link
   var Space$ = $void.Space
   var Symbol$ = $void.Symbol
@@ -6986,8 +7007,13 @@ module.exports = function arithmetic ($void) {
   var evaluate = $void.evaluate
   var staticOperator = $void.staticOperator
 
+  var mod = $Number.proto['%']
+  var symbolSubject = $.symbol.subject
+
   staticOperator('-', function (space, clause) {
     var value = evaluate(clause.$[1], space)
+    return typeof value === 'number' ? (-value) : -0
+  }, function (value) {
     return typeof value === 'number' ? (-value) : -0
   })
 
@@ -7005,6 +7031,8 @@ module.exports = function arithmetic ($void) {
     // as a normal plus-one operation
     sym = evaluate(sym, space)
     return typeof sym === 'number' ? sym + 1 : 1
+  }, function (value) {
+    return typeof value === 'number' ? (value + 1) : 1
   })
 
   staticOperator('--', function (space, clause) {
@@ -7021,17 +7049,18 @@ module.exports = function arithmetic ($void) {
     // as a normal minus-one operation
     sym = evaluate(sym, space)
     return typeof sym === 'number' ? sym - 1 : -1
+  }, function (value) {
+    return typeof value === 'number' ? (value - 1) : -1
   })
 
   // increment a value by one and assign it back to the same variable
   link($Number.proto, '++', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
-      return 0 // The value of this operator is defined as 0.
+    if (!(space instanceof Space$) || typeof that !== 'number') {
+      return 1 // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'number' || !clause || !clause.$ || !clause.$.length) {
-      that = 0
-    }
-    var sym = clause.$[0]
+
+    var clist = clause.$
+    var sym = clist[clist[0] === symbolSubject ? 1 : 0]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that + 1)
     }
@@ -7040,13 +7069,11 @@ module.exports = function arithmetic ($void) {
 
   // increment a value by one and assign it back to the same variable
   link($Number.proto, '--', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
-      return 0 // The value of this operator is defined as 0.
+    if (!(space instanceof Space$) || typeof that !== 'number') {
+      return -1 // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'number' || !clause || !clause.$ || !clause.$.length) {
-      that = 0
-    }
-    var sym = clause.$[0]
+    var clist = clause.$
+    var sym = clist[clist[0] === symbolSubject ? 1 : 0]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that - 1)
     }
@@ -7055,20 +7082,20 @@ module.exports = function arithmetic ($void) {
 
   // (num += num ... )
   link($Number.proto, '+=', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'number') {
-      that = 0
-    }
-    var clist = clause.$ && clause.$.length ? clause.$ : []
-    for (var i = 2; i < clist.length; i++) {
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    for (var i = base, len = clist.length; i < len; i++) {
       var value = evaluate(clist[i], space)
       if (typeof value === 'number') {
         that += value
       }
     }
-    var sym = clist[0]
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7077,20 +7104,20 @@ module.exports = function arithmetic ($void) {
 
   // (num -= num ... )
   link($Number.proto, '-=', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'number') {
-      that = 0
-    }
-    var clist = clause.$ && clause.$.length ? clause.$ : []
-    for (var i = 2; i < clist.length; i++) {
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    for (var i = base, len = clist.length; i < len; i++) {
       var value = evaluate(clist[i], space)
       if (typeof value === 'number') {
         that -= value
       }
     }
-    var sym = clist[0]
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7099,20 +7126,20 @@ module.exports = function arithmetic ($void) {
 
   // (num *= num ... )
   link($Number.proto, '*=', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'number') {
-      that = 0
-    }
-    var clist = clause.$ && clause.$.length ? clause.$ : []
-    for (var i = 2; i < clist.length; i++) {
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    for (var i = base, len = clist.length; i < len; i++) {
       var value = evaluate(clist[i], space)
       if (typeof value === 'number') {
         that *= value
       }
     }
-    var sym = clist[0]
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7121,20 +7148,20 @@ module.exports = function arithmetic ($void) {
 
   // (num /= num ...)
   link($Number.proto, '/=', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'number') {
-      that = 0
-    }
-    var clist = clause.$ && clause.$.length ? clause.$ : []
-    for (var i = 2; i < clist.length; i++) {
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    for (var i = base, len = clist.length; i < len; i++) {
       var value = evaluate(clist[i], space)
       if (typeof value === 'number') {
         that /= value
       }
     }
-    var sym = clist[0]
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7143,19 +7170,18 @@ module.exports = function arithmetic ($void) {
 
   // (num %= num ...)
   link($Number.proto, '%=', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'number') {
-      that = 0
-    }
-    var clist = clause.$ && clause.$.length ? clause.$ : []
-    if (clist.length > 2) {
-      that = mod.call(that, evaluate(clist[2], space))
-    }
-    var sym = clist[0]
-    if (sym instanceof Symbol$) {
-      space.let(sym.key, that)
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    if (clist.length > base) {
+      that = mod.call(that, evaluate(clist[base], space))
+      var sym = clist[base - 2]
+      if (sym instanceof Symbol$) {
+        space.let(sym.key, that)
+      }
     }
     return that
   }))
@@ -7263,25 +7289,25 @@ module.exports = function assignment ($void) {
         return null // unrecognized pattern
       }
       // (var (symbol ...) value-or-values).
-      var syms = sym.$
+      var symbols = sym.$
       if (Array.isArray(values)) { // assign the value one by one.
-        for (i = 0; i < syms.length; i++) {
-          if (syms[i] instanceof Symbol$) {
-            space[method](syms[i].key, i < values.length ? values[i] : null)
+        for (i = 0; i < symbols.length; i++) {
+          if (symbols[i] instanceof Symbol$) {
+            space[method](symbols[i].key, i < values.length ? values[i] : null)
           }
         }
       } else if (isObject(values)) { // read fields into an array.
-        for (i = 0; i < syms.length; i++) {
-          if (syms[i] instanceof Symbol$) {
-            name = syms[i].key
+        for (i = 0; i < symbols.length; i++) {
+          if (symbols[i] instanceof Symbol$) {
+            name = symbols[i].key
             value = values[name]
             space[method](name, typeof value === 'undefined' ? null : value)
           }
         }
       } else { // assign all symbols the same value.
-        for (i = 0; i < syms.length; i++) {
-          if (syms[i] instanceof Symbol$) {
-            space[method](syms[i].key, values)
+        for (i = 0; i < symbols.length; i++) {
+          if (symbols[i] instanceof Symbol$) {
+            space[method](symbols[i].key, values)
           }
         }
       }
@@ -7311,29 +7337,33 @@ module.exports = function bitwise ($void) {
   var Symbol$ = $void.Symbol
   var evaluate = $void.evaluate
   var operator = $void.operator
+  var intValueOf = $void.intValueOf
+  var numberValueOf = $void.numberValueOf
   var staticOperator = $void.staticOperator
+
+  var symbolSubject = $.symbol.subject
 
   staticOperator('~', function (space, clause) {
     if (clause.$.length > 1) {
       var value = evaluate(clause.$[1], space)
-      return typeof value === 'number' ? ~value : ~0
+      return typeof value === 'number' ? ~value : -1
     }
-    return ~0
+    return -1
+  }, function (value) {
+    return typeof value === 'number' ? ~value : -1
   })
 
   // bitwise AND and assign it back to the same variable
   link($Number.proto, '&=', operator(function (space, clause, that) {
-    var clist = clause.$
-    if (typeof that !== 'number' || clist.length < 3) {
-      return 0
-    }
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    var value = evaluate(clist[2], space)
-    that &= typeof value === 'number' ? value : 0
-    // try to save back
-    var sym = clist[0]
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    var value = clist.length > base ? evaluate(clist[base], space) : 0
+    that &= typeof value === 'number' ? value : numberValueOf(value)
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7342,18 +7372,16 @@ module.exports = function bitwise ($void) {
 
   // bitwise OR and assign it back to the same variable
   link($Number.proto, '|=', operator(function (space, clause, that) {
-    if (typeof that !== 'number') {
-      return 0
-    }
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    var clist = clause && clause.$
-    var value = clist && clist.length && clist.length > 2
-      ? evaluate(clist[2], space) : 0
-    that |= typeof value === 'number' ? value : 0
-    // try to save back
-    var sym = clist[0]
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    var value = clist.length > base ? evaluate(clist[base], space) : 0
+    that |= typeof value === 'number' ? value : numberValueOf(value)
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7362,18 +7390,16 @@ module.exports = function bitwise ($void) {
 
   // bitwise XOR and assign it back to the same variable
   link($Number.proto, '^=', operator(function (space, clause, that) {
-    if (typeof that !== 'number') {
-      return 0
-    }
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    var clist = clause && clause.$
-    var value = clist && clist.length && clist.length > 2
-      ? evaluate(clist[2], space) : 0
-    that ^= typeof value === 'number' ? value : 0
-    // try to save back
-    var sym = clist[0]
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    var value = clist.length > base ? evaluate(clist[base], space) : 0
+    that ^= typeof value === 'number' ? value : numberValueOf(value)
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7382,18 +7408,16 @@ module.exports = function bitwise ($void) {
 
   // bitwise left-shift and assign it back to the same variable
   link($Number.proto, '<<=', operator(function (space, clause, that) {
-    if (typeof that !== 'number') {
-      return 0
-    }
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    var clist = clause && clause.$
-    var offset = clist && clist.length && clist.length > 2
-      ? evaluate(clist[2], space) : 0
-    that <<= typeof offset === 'number' ? offset : 0
-    // try to save back
-    var sym = clist[0]
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    var offset = clist.length > base ? evaluate(clist[base], space) : 0
+    that <<= typeof offset === 'number' ? offset : intValueOf(offset)
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7402,18 +7426,16 @@ module.exports = function bitwise ($void) {
 
   // bitwise right-shift and assign it back to the same variable
   link($Number.proto, '>>=', operator(function (space, clause, that) {
-    if (typeof that !== 'number') {
-      return 0
-    }
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    var clist = clause && clause.$
-    var offset = clist && clist.length && clist.length > 2
-      ? evaluate(clist[2], space) : 0
-    that >>= typeof offset === 'number' ? offset : 0
-    // try to save back
-    var sym = clist[0]
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    var offset = clist.length > base ? evaluate(clist[base], space) : 0
+    that >>= typeof offset === 'number' ? offset : intValueOf(offset)
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7422,18 +7444,16 @@ module.exports = function bitwise ($void) {
 
   // bitwise zero-fill right-shift and assign it back to the same variable
   link($Number.proto, '>>>=', operator(function (space, clause, that) {
-    if (typeof that !== 'number') {
-      return 0
-    }
-    if (!(space instanceof Space$)) {
+    if (!(space instanceof Space$) || typeof that !== 'number') {
       return 0 // The value of this operator is defined as 0.
     }
-    var clist = clause && clause.$
-    var offset = clist && clist.length && clist.length > 2
-      ? evaluate(clist[2], space) : 0
-    that >>>= typeof offset === 'number' ? offset : 0
-    // try to save back
-    var sym = clist[0]
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    var offset = clist.length > base ? evaluate(clist[base], space) : 0
+    that >>>= typeof offset === 'number' ? offset : intValueOf(offset)
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7469,25 +7489,6 @@ module.exports = function control ($void) {
   var symbolElse = sharedSymbolOf('else')
   var symbolIn = sharedSymbolOf('in')
   var symbolUnderscore = sharedSymbolOf('_')
-
-  // (? sym) - resolve in global scope or original scope (in operator only).
-  // (? cond true-branch false-branch)
-  staticOperator('?', function (space, clause) {
-    var clist = clause.$
-    var length = clist.length
-    if (length < 2) {
-      return null // short circuit - the result will be null anyway.
-    }
-    var cond = clist[1]
-    if (length < 3) {
-      return cond instanceof Symbol$ ? space.$resolve(cond.key) : null
-    }
-    cond = evaluate(cond, space)
-    if (typeof cond !== 'undefined' && cond !== null && cond !== 0 && cond !== false) {
-      return evaluate(clist[2], space)
-    }
-    return length > 3 ? evaluate(clist[3], space) : null
-  })
 
   // (if cond true-branch else false-branch)
   staticOperator('if', function (space, clause) {
@@ -7716,7 +7717,7 @@ module.exports = function load ($void) {
     var dirs = space.local['-module'] ? [loader.dir(space.local['-module'])] : []
     var fetching = fetch.bind(null, loader, dirs)
     var tasks = []
-    for (var i = 1; i < clist.length; i++) {
+    for (var i = 1, len = clist.length; i < len; i++) {
       tasks.push(fetching(evaluate(clist[i], space)))
     }
     return promiseAll(tasks)
@@ -7754,7 +7755,7 @@ module.exports = function load ($void) {
       var clist = Array.isArray(uris) ? uris.slice()
         : Array.prototype.slice.call(arguments)
       clist.unshift(symbolFetch)
-      for (var i = 1; i < clist.length; i++) {
+      for (var i = 1, len = clist.length; i < len; i++) {
         var uri = clist[i]
         if (!uri || typeof uri !== 'string') {
           warn('$fetch', 'invalid source uri:', uri)
@@ -7874,8 +7875,10 @@ module.exports = function general ($void) {
   var operator = $void.operator
   var thisCall = $void.thisCall
   var evaluate = $void.evaluate
-  var numberValueOf = $.number.of
+  var numberValueOf = $void.numberValueOf
   var staticOperator = $void.staticOperator
+
+  var symbolSubject = $.symbol.subject
 
   staticOperator('+', function (space, clause) {
     var clist = clause.$
@@ -7887,6 +7890,27 @@ module.exports = function general ($void) {
         : concat(space, base, clist)
     }
     return 0
+  }, function (base, value) {
+    var i = 1
+    var len = arguments.length
+    if (len < 1) {
+      return 0
+    }
+    if (typeof base === 'number') {
+      for (; i < len; i++) {
+        value = arguments[i]
+        base += typeof value === 'number' ? value : numberValueOf(value)
+      }
+    } else {
+      if (typeof base !== 'string') {
+        base = thisCall(base, 'to-string')
+      }
+      for (; i < len; i++) {
+        value = arguments[i]
+        base += typeof value === 'string' ? value : thisCall(value, 'to-string')
+      }
+    }
+    return base
   })
 
   function concat (space, str, clist) {
@@ -7905,33 +7929,25 @@ module.exports = function general ($void) {
     var length = clist.length
     for (var i = 2; i < length; i++) {
       var value = evaluate(clist[i], space)
-      if (typeof value === 'number') {
-        num += value
-      } else {
-        num += numberValueOf(value)
-      }
+      num += typeof value === 'number' ? value : numberValueOf(value)
     }
     return num
   }
 
   // (str += str ... )
   link($String.proto, '+=', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
-      return 0 // The value of this operator is defined as 0.
+    if (!(space instanceof Space$) || typeof that !== 'string') {
+      return '' // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'string') {
-      that = ''
-    }
-    var clist = clause && clause.$ && clause.$.length ? clause.$ : []
-    for (var i = 2; i < clist.length; i++) {
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    for (var i = base, len = clist.length; i < len; i++) {
       var value = evaluate(clist[i], space)
-      if (typeof value === 'string') {
-        that += value
-      } else {
-        that += thisCall(value, 'to-string')
-      }
+      that += typeof value === 'string' ? value : thisCall(value, 'to-string')
     }
-    var sym = clist[0]
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
@@ -7940,17 +7956,13 @@ module.exports = function general ($void) {
 
   // (str -= str ... ) or (str -= num)
   link($String.proto, '-=', operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
-      return 0 // The value of this operator is defined as 0.
+    if (!(space instanceof Space$) || typeof that !== 'string') {
+      return '' // The value of this operator is defined as 0.
     }
-    if (typeof that !== 'string') {
-      return null
-    }
-    if (that.length < 1) {
-      return that
-    }
-    var clist = clause && clause.$ && clause.$.length ? clause.$ : []
-    for (var i = 2; i < clist.length; i++) {
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    for (var i = base, len = clist.length; i < len; i++) {
       var value = evaluate(clist[i], space)
       if (typeof value === 'string') {
         if (that.endsWith(value)) {
@@ -7965,12 +7977,426 @@ module.exports = function general ($void) {
         }
       }
     }
-    var sym = clist[0]
+
+    var sym = clist[base - 2]
     if (sym instanceof Symbol$) {
       space.let(sym.key, that)
     }
     return that
   }))
+}
+
+
+/***/ }),
+
+/***/ "./es/operators/generator.js":
+/*!***********************************!*\
+  !*** ./es/operators/generator.js ***!
+  \***********************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+module.exports = function generator ($void) {
+  var $ = $void.$
+  var Symbol$ = $void.Symbol
+  var $export = $void.export
+  var isFalsy = $void.isFalsy
+  var isTruthy = $void.isTruthy
+  var thisCall = $void.thisCall
+  var evaluate = $void.evaluate
+  var bindThis = $void.bindThis
+  var indexerOf = $void.indexerOf
+  var isApplicable = $void.isApplicable
+  var numberValueOf = $void.numberValueOf
+  var staticOperator = $void.staticOperator
+  var tryToUpdateName = $void.tryToUpdateName
+
+  var symbolPairing = $.symbol.pairing
+
+  function noop (this_) {
+    return this_
+  }
+
+  function generatorOf (op, impl, defaultOp) {
+    impl || (impl = noop(function (space, clause) {
+      var clist = clause.$
+      switch (clist.length) {
+        case 1:
+          return function (this_) {
+            return thisCall(this_, op)
+          }
+        case 2:
+          var base = evaluate(clist[1], space)
+          return function (this_) {
+            return thisCall(this_, op, base)
+          }
+        default:
+      }
+      var args = []
+      for (var i = 1, len = clist.length; i < len; i++) {
+        args.push(evaluate(clist[i], space))
+      }
+      return function (this_) {
+        return thisCall.apply(null, [this_, op].concat(args))
+      }
+    }))
+
+    defaultOp || (defaultOp = noop(function (this_) {
+      return arguments.length < 2 ? thisCall(this_, op)
+        : thisCall.apply(null, [this_, op].concat(
+          Array.prototype.slice.call(arguments, 1)
+        ))
+    }))
+
+    return staticOperator(op, impl, defaultOp)
+  }
+
+  // universal operations
+  staticOperator('===', generatorOf('is'), $['is'])
+  staticOperator('!==', generatorOf('is-not'), $['is-not'])
+
+  staticOperator('==', generatorOf('equals'), $['equals'])
+  staticOperator('!=', generatorOf('not-equals'), $['not-equals'])
+
+  generatorOf('compare')
+
+  generatorOf('is-empty')
+  generatorOf('not-empty')
+
+  staticOperator('is-an', generatorOf('is-a'), $['is-a'])
+  staticOperator('is-not-an', generatorOf('is-not-a'), $['is-not-a'])
+
+  generatorOf('to-code')
+  generatorOf('to-string')
+
+  // comparer operations for number and string
+  generatorOf('>')
+  generatorOf('>=')
+  generatorOf('<')
+  generatorOf('<=')
+
+  // arithmetic operators: -, ++, --, ...
+  function arithmeticGeneratorOf (op) {
+    var defaultOp = tryToUpdateName(function (this_) {
+      return thisCall(this_, op)
+    }, '*' + op)
+
+    return staticOperator(op + '=', function (space, clause) {
+      var clist = clause.$
+      var length = clist.length
+      if (length < 2) {
+        return defaultOp
+      }
+      var args = []
+      for (var i = 1; i < length; i++) {
+        args.push(evaluate(clist[i], space))
+      }
+      return function (this_) {
+        return thisCall.apply(null, [this_, op].concat(args))
+      }
+    }, function (a, b) {
+      return typeof a === 'undefined' ? null
+        : typeof b === 'undefined' ? thisCall(a, op) : thisCall(a, op, b)
+    })
+  }
+
+  arithmeticGeneratorOf('+')
+  arithmeticGeneratorOf('-')
+  arithmeticGeneratorOf('*')
+  arithmeticGeneratorOf('/')
+  arithmeticGeneratorOf('%')
+
+  // bitwise: ~, ...
+  function safeBitwiseOpOf (op) {
+    return function (a, b) {
+      return op.call(typeof a === 'number' ? a : numberValueOf(a), b)
+    }
+  }
+
+  function bitwiseGeneratorOf (key) {
+    var op = $.number.proto[key]
+
+    var defaultOp = tryToUpdateName(function (this_) {
+      return op.call(typeof this_ === 'number' ? this_
+        : numberValueOf(this_)
+      )
+    }, '*' + key)
+
+    return staticOperator(key + '=', function (space, clause) {
+      var clist = clause.$
+      if (clist.length < 2) {
+        return defaultOp
+      }
+      var value = evaluate(clist[1], space)
+      return function (this_) {
+        return op.call(typeof this_ === 'number' ? this_
+          : numberValueOf(this_), value
+        )
+      }
+    }, safeBitwiseOpOf(op))
+  }
+
+  bitwiseGeneratorOf('&')
+  bitwiseGeneratorOf('|')
+  bitwiseGeneratorOf('^')
+  bitwiseGeneratorOf('<<')
+  bitwiseGeneratorOf('>>')
+  bitwiseGeneratorOf('>>>')
+
+  // general: +, (str +=), (str -=)
+
+  // logical operators: not, !, ...
+  var defaultAnd = tryToUpdateName(function (this_) { return this_ }, '*&&')
+
+  var logicalAnd = bindThis(null, function (a, b) {
+    return typeof a === 'undefined' || (
+      isFalsy(a) || typeof b === 'undefined' ? a : b
+    )
+  })
+
+  var logicalAndAll = bindThis(null, function () {
+    var factor
+    for (var i = 0, len = arguments.length; i < len; i++) {
+      factor = arguments[i]
+      if (factor !== logicalAndAll && isFalsy(factor)) {
+        return factor
+      }
+    }
+    return typeof factor !== 'undefined' ? factor : true
+  })
+
+  var generatorAnd = staticOperator('&&', function (space, clause) {
+    var clist = clause.$
+    if (clist.length < 2) {
+      return defaultAnd
+    }
+    var value
+    for (var i = 1, len = clist.length; i < len; i++) {
+      value = evaluate(clist[i], space)
+      if (isFalsy(value)) {
+        break
+      }
+    }
+    return function (this_) {
+      return logicalAnd(this_, value)
+    }
+  }, logicalAndAll)
+
+  staticOperator('and', generatorAnd, logicalAndAll)
+  staticOperator('&&=', generatorAnd, logicalAnd)
+
+  var defaultOr = tryToUpdateName(function (this_) { return this_ }, '*||')
+
+  var logicalOr = bindThis(null, function (a, b) {
+    return typeof a !== 'undefined' && (
+      isTruthy(a) || typeof b === 'undefined' ? a : b
+    )
+  })
+
+  var logicalOrAny = bindThis(null, function () {
+    var factor
+    for (var i = 0, len = arguments.length; i < len; i++) {
+      factor = arguments[i]
+      if (factor !== logicalOrAny && isTruthy(factor)) {
+        return factor
+      }
+    }
+    return typeof factor !== 'undefined' ? factor : false
+  })
+
+  var generatorOr = staticOperator('||', function (space, clause) {
+    var clist = clause.$
+    if (clist.length < 2) {
+      return defaultOr
+    }
+    var value
+    for (var i = 1, len = clist.length; i < len; i++) {
+      value = evaluate(clist[i], space)
+      if (isTruthy(value)) {
+        break
+      }
+    }
+    return function (this_) {
+      return logicalOr(this_, value)
+    }
+  }, logicalOrAny)
+
+  staticOperator('or', generatorOr, logicalOrAny)
+  staticOperator('||=', generatorOr, logicalOr)
+
+  var booleanize = tryToUpdateName(bindThis(null, isTruthy), '*?')
+
+  staticOperator('?', function (space, clause) {
+    var clist = clause.$
+    switch (clist.length) {
+      case 0:
+      case 1: // booleanize function.
+        return booleanize
+      case 2: // pre-defined boolean fallback
+        var fallback = evaluate(clist[1], space)
+        return function (this_) {
+          return isTruthy(this_) ? this_ : fallback
+        }
+      default: // predefined boolean switch
+        var truthy = evaluate(clist[1], space)
+        var falsy = evaluate(clist[2], space)
+        return function (this_) {
+          return isTruthy(this_) ? truthy : falsy
+        }
+    }
+  }, booleanize) // the entity is also the booleanize function.
+
+  var booleanizeEmptiness = tryToUpdateName(function (this_) {
+    return typeof this_ === 'undefined' || thisCall(this_, 'not-empty')
+  }, '*?*')
+
+  staticOperator('?*', function (space, clause) {
+    var clist = clause.$
+    switch (clist.length) {
+      case 0:
+      case 1:
+        return booleanizeEmptiness
+      case 2: // pre-defined emptiness fallback
+        var fallback = evaluate(clist[1], space)
+        return function (this_) {
+          return thisCall(this_, 'not-empty') ? this_ : fallback
+        }
+      default: // predefined emptiness switch
+        var truthy = evaluate(clist[1], space)
+        var falsy = evaluate(clist[2], space)
+        return function (this_) {
+          return thisCall(this_, 'not-empty') ? truthy : falsy
+        }
+    }
+  }, booleanizeEmptiness)
+
+  var booleanizeNull = tryToUpdateName(function (this_) {
+    return typeof this_ === 'undefined' || this_ !== null
+  }, '*??')
+
+  staticOperator('??', function (space, clause) {
+    var clist = clause.$
+    switch (clist.length) {
+      case 0:
+      case 1:
+        return booleanizeNull
+      case 2: // pre-defined null fallback
+        var fallback = evaluate(clist[1], space)
+        return function (this_) {
+          return this_ !== null && typeof this_ !== 'undefined'
+            ? this_ : fallback
+        }
+      default: // predefined emptiness switch
+        var truthy = evaluate(clist[1], space)
+        var falsy = evaluate(clist[2], space)
+        return function (this_) {
+          return this_ !== null && typeof this_ !== 'undefined' ? truthy : falsy
+        }
+    }
+  }, booleanizeNull)
+
+  // logical combinator
+  function combine (factors, isNegative) {
+    return function (this_) {
+      var factor
+      for (var i = 0, len = factors.length; i < len; i++) {
+        factor = factors[i]
+        factor = isApplicable(factor) ? factor(this_)
+          : thisCall(this_, 'equals', factor)
+        if (isNegative(factor)) {
+          return factor
+        }
+      }
+      return factor
+    }
+  }
+
+  var alwaysTrue = function yes () { return true }
+
+  var logicalAll = $export($, 'all', function () {
+    var factors = []
+    for (var i = 0, len = arguments.length; i < len; i++) {
+      (arguments[i] !== logicalAndAll) && factors.push(arguments[i])
+    }
+    return factors.length < 1 ? alwaysTrue : combine(factors, isFalsy)
+  })
+  // both is only an alias of all.
+  $export($, 'both', logicalAll)
+
+  var alwaysFalse = function no () { return false }
+
+  var logicalAny = $export($, 'any', function any () {
+    var factors = []
+    for (var i = 0, len = arguments.length; i < len; i++) {
+      (arguments[i] !== logicalOrAny) && factors.push(arguments[i])
+    }
+    return factors.length < 1 ? alwaysFalse : combine(factors, isTruthy)
+  })
+  // either is only an alias of any.
+  $export($, 'either', logicalAny)
+
+  function combineNot (factors) {
+    return function (this_) {
+      var factor
+      for (var i = 0, len = factors.length; i < len; i++) {
+        factor = factors[i]
+        factor = isApplicable(factor) ? isTruthy(factor(this_))
+          : thisCall(this_, 'equals', factor)
+        if (factor) {
+          return false
+        }
+      }
+      return true
+    }
+  }
+
+  var logicalNotAny = $export($, 'not-any', function () {
+    var factors = []
+    for (var i = 0, len = arguments.length; i < len; i++) {
+      (arguments[i] !== logicalOrAny) && factors.push(arguments[i])
+    }
+    return factors.length < 1 ? alwaysTrue : combineNot(factors)
+  })
+  // neither is only an alias of not-any.
+  $export($, 'neither', logicalNotAny)
+  // nor is only an alias of or for neither.
+  $export($, 'nor', logicalOrAny)
+
+  // general predictor
+  staticOperator('*', function (space, clause) {
+    var clist = clause.$
+    var len = clist.length
+    if (len < 2) {
+      return null // (*) returns null.
+    }
+    var sym = clist[1]
+    var i
+    if (sym instanceof Symbol$) {
+      i = 2; sym = sym.key
+    } else {
+      i = 1; sym = symbolPairing
+    }
+    var args = []
+    for (; i < len; i++) {
+      args.push(evaluate(clist[i], space))
+    }
+    return sym === symbolPairing
+      // the same with the behavior of evaluate function.
+      ? args.length < 1 ? function (this_) {
+        return indexerOf(this_)()
+      } : function (this_) {
+        return indexerOf(this_).apply(this_, args)
+      }
+      // general this call generator.
+      : args.length < 1 ? function (this_) {
+        return thisCall(this_, sym)
+      } : function (this_) {
+        return thisCall.apply(null, [this_, sym].concat(args))
+      }
+  }, null) // being referred, * functions as a null.
 }
 
 
@@ -8493,66 +8919,97 @@ module.exports = function logical ($void) {
   var Null = $void.null
   var link = $void.link
   var Space$ = $void.Space
+  var Symbol$ = $void.Symbol
+  var isFalsy = $void.isFalsy
   var operator = $void.operator
   var evaluate = $void.evaluate
   var thisCall = $void.thisCall
-  var symbolSubject = $.symbol.subject
   var staticOperator = $void.staticOperator
 
-  var not = staticOperator('!', function (space, clause) {
+  var symbolSubject = $.symbol.subject
+
+  staticOperator('not', staticOperator('!', function (space, clause) {
     if (clause.$.length < 2) {
       return false
     }
     var value = evaluate(clause.$[1], space)
     return value === false || value === null || value === 0
-  })
-
-  staticOperator('not', not)
+  }, isFalsy), isFalsy)
 
   // global logical AND operator
-  link(Null, ['&&', 'and'], operator(function (space, clause, that) {
-    if (!(space instanceof Space$)) {
-      return null
-    }
-    var clist = clause.$
-    if (typeof that === 'undefined') {
-      return null
+  var logicalAnd = link(Null, ['&&', 'and'], operator(function (
+    space, clause, that
+  ) {
+    if (!(space instanceof Space$) || typeof that === 'undefined') {
+      return true
     }
     if (that === false || that === null || that === 0) {
       return that
     }
-    var value = that
+
+    var clist = clause.$
     var i = clist[0] === symbolSubject ? 3 : 2
-    for (; i < clist.length; i++) {
-      value = evaluate(clist[i], space)
-      if (value === false || value === null || value === 0) {
-        return value
+    for (var len = clist.length; i < len; i++) {
+      that = evaluate(clist[i], space)
+      if (that === false || that === null || that === 0) {
+        return that
       }
     }
-    return value
+    return that
+  }))
+
+  link(Null, '&&=', operator(function (space, clause, that) {
+    if (!(space instanceof Space$) || typeof that === 'undefined') {
+      return true
+    }
+
+    var result = logicalAnd(space, clause, that)
+    if (!Object.is(that, result)) {
+      var clist = clause.$
+      var sym = clist[clist[0] === symbolSubject ? 1 : 0]
+      if (sym instanceof Symbol$) {
+        space.let(sym.key, result)
+      }
+    }
+    return result
   }))
 
   // global logical OR operator
-  link(Null, ['||', 'or'], operator(function (space, clause, that) {
-    var clist = clause && clause.$
-    if (typeof that === 'undefined') {
-      that = null
+  var logicalOr = link(Null, ['||', 'or'], operator(function (
+    space, clause, that
+  ) {
+    if (!(space instanceof Space$) || typeof that === 'undefined') {
+      return false
     }
     if (that !== false && that !== null && that !== 0) {
       return that
     }
-    if (!(space instanceof Space$)) {
-      return null
-    }
-    var value = that
+
+    var clist = clause.$
     var i = clist[0] === symbolSubject ? 3 : 2
-    for (; i < clist.length; i++) {
-      value = evaluate(clist[i], space)
-      if (value !== false && value !== null && value !== 0) {
-        return value
+    for (var len = clist.length; i < len; i++) {
+      that = evaluate(clist[i], space)
+      if (that !== false && that !== null && that !== 0) {
+        return that
       }
     }
-    return value
+    return that
+  }))
+
+  link(Null, '||=', operator(function (space, clause, that) {
+    if (!(space instanceof Space$) || typeof that === 'undefined') {
+      return false
+    }
+
+    var result = logicalOr(space, clause, that)
+    if (!Object.is(that, result)) {
+      var clist = clause.$
+      var sym = clist[clist[0] === symbolSubject ? 1 : 0]
+      if (sym instanceof Symbol$) {
+        space.let(sym.key, result)
+      }
+    }
+    return result
   }))
 
   // Boolean Test.
@@ -8560,41 +9017,50 @@ module.exports = function logical ($void) {
   // (x ? y) - boolean fallback, returns x itself or returns y if x is equivalent to false.
   // (x ? y z) - boolean switch, returns y if x is equivalent to true, returns z otherwise.
   link(Null, '?', operator(function (space, clause, that) {
-    var clist = clause && clause.$
-    if (!clist || !clist.length || clist.length < 2) {
-      return null // invalid call
+    if (!(space instanceof Space$) || typeof that === 'undefined') {
+      return true // defined as true.
     }
+    var clist = clause.$
     var base = clist[0] === symbolSubject ? 3 : 2
-    if (typeof that !== 'undefined' && that !== false && that !== null && that !== 0) {
+    if (clist.length < base) {
+      return true // defined as true
+    }
+
+    if (that !== false && that !== null && that !== 0) {
       switch (clist.length - base) { // true logic
         case 0:
           return true
         case 1:
           return that
         default:
-          return space instanceof Space$ ? evaluate(clist[base], space) : null
+          return evaluate(clist[base], space)
       }
     }
+
     switch (clist.length - base) { // false logic
       case 0:
         return false
       case 1:
-        return space instanceof Space$ ? evaluate(clist[base], space) : null
+        return evaluate(clist[base], space)
       default:
-        return space instanceof Space$ ? evaluate(clist[base + 1], space) : null
+        return evaluate(clist[base + 1], space)
     }
   }))
 
   // Emptiness Test.
   // (x ?*) - booleanized emptiness, returns true or false.
-  // x ?* y) - empty fallback, returns x itself or returns y if x is empty.
-  // (x ?* y z) - empty switch, returns y if x is not an empty value, returns z otherwise.
+  // x ?* y) - emptiness fallback, returns x itself or returns y if x is empty.
+  // (x ?* y z) - emptiness switch, returns y if x is not an empty value, returns z otherwise.
   link(Null, '?*', operator(function (space, clause, that) {
-    var clist = clause && clause.$
-    if (!clist || !clist.length || clist.length < 2) {
-      return null // invalid call
+    if (!(space instanceof Space$) || typeof that === 'undefined') {
+      return true // defined as true.
     }
+    var clist = clause.$
     var base = clist[0] === symbolSubject ? 3 : 2
+    if (clist.length < base) {
+      return true // defined as true
+    }
+
     if (thisCall(that, 'not-empty')) {
       switch (clist.length - base) { // true logic
         case 0:
@@ -8602,47 +9068,72 @@ module.exports = function logical ($void) {
         case 1:
           return that
         default:
-          return space instanceof Space$ ? evaluate(clist[base], space) : null
+          return evaluate(clist[base], space)
       }
     }
     switch (clist.length - base) { // false logic
       case 0:
         return false
       case 1:
-        return space instanceof Space$ ? evaluate(clist[base], space) : null
+        return evaluate(clist[base], space)
       default:
-        return space instanceof Space$ ? evaluate(clist[base + 1], space) : null
+        return evaluate(clist[base + 1], space)
     }
   }))
 
-  // Null Fallback
+  // Null Test.
+  // (x ??) - booleanize null, returns true or false.
+  // (x ?? y) - null fallback, returns x itself or returns y if x is null.
   // (null ?? y z ...) returns the first non-null value after it if x is null.
   link(Null, '??', operator(function (space, clause, that) {
     if (!(space instanceof Space$)) {
-      return null
+      return true // defined as true.
     }
+
     var clist = clause.$
-    var i = clist[0] === symbolSubject ? 3 : 2
-    for (; i < clist.length; i++) {
-      var value = evaluate(clist[i], space)
-      if (value !== null) {
-        return value
-      }
+    var base = clist[0] === symbolSubject ? 3 : 2
+    if (clist.length < base) {
+      return true // defined as true
     }
-    return null
+
+    switch (clist.length - base) {
+      case 0: // booleanize
+        return false
+      case 1: // fallback
+        return evaluate(clist[base], space)
+      default: // (falsy) switch
+        return evaluate(clist[base + 1], space)
+    }
   }))
 
-  // (non-null ?? ...) return non-null.
+  // for all non-null values.
   link($Type.proto, '??', operator(function (space, clause, that) {
-    return that
+    if (!(space instanceof Space$)) {
+      return true // defined as true.
+    }
+
+    var clist = clause.$
+    var base = clist[0] === symbolSubject ? 3 : 2
+    if (clist.length < base) {
+      return true // defined as true
+    }
+
+    switch (clist.length - base) {
+      case 0: // booleanize
+        return true
+      case 1: // (no) fallback
+        return that
+      default: // (truthy) switch
+        return evaluate(clist[base], space)
+    }
   }))
 
   // Boolean value verification helpers.
   link($Bool.proto, 'fails', operator(function (space, clause, that) {
-    return !that
+    return typeof that === 'boolean' ? !that : true
   }))
   link($Bool.proto, 'succeeds', operator(function (space, clause, that) {
-    return !!that
+    return typeof that === 'boolean' ? that : false
   }))
 }
 
@@ -8661,13 +9152,33 @@ module.exports = function logical ($void) {
 
 module.exports = function operator ($void) {
   var $ = $void.$
+  var Tuple$ = $void.Tuple
+  var Symbol$ = $void.Symbol
   var $Operator = $.operator
+  var evaluate = $void.evaluate
   var operatorOf = $void.operatorOf
   var staticOperator = $void.staticOperator
 
   // create the operator to define an operator
   staticOperator('=?', function (space, clause) {
     return clause.$.length < 2 ? $Operator.noop : operatorOf(space, clause)
+  })
+
+  // To resolve a symbol from the original declaration space of an operator.
+  // It's designed to be used in an operator, but it falls back to the result of
+  // applying operator ".." if it's called in a non-operator space.
+  staticOperator('.', function (space, clause) {
+    var clist = clause.$
+    if (clist.length > 1) {
+      var sym = clist[1]
+      if (sym instanceof Tuple$) {
+        sym = evaluate(sym, space)
+      }
+      if (sym instanceof Symbol$) {
+        return space.$resolve(sym.key)
+      }
+    }
+    return null
   })
 }
 
@@ -8684,7 +9195,11 @@ module.exports = function operator ($void) {
 "use strict";
 
 
-module.exports = function quote ($void) {
+module.exports = function pattern ($void) {
+  var $ = $void.$
+  var Tuple$ = $void.Tuple
+  var Symbol$ = $void.Symbol
+  var evaluate = $void.evaluate
   var staticOperator = $void.staticOperator
 
   // pseudo explicit subject pattern operator '$'.
@@ -8695,6 +9210,21 @@ module.exports = function quote ($void) {
   // pseudo explicit operation pattern operator ':'.
   staticOperator(':', function () {
     return null // It's implemented in evaluation function.
+  })
+
+  // try to resolve a symbol from the global space.
+  staticOperator('..', function (space, clause) {
+    var clist = clause.$
+    if (clist.length > 1) {
+      var sym = clist[1]
+      if (sym instanceof Tuple$) {
+        sym = evaluate(sym, space)
+      }
+      if (sym instanceof Symbol$) {
+        return $[sym.key]
+      }
+    }
+    return null
   })
 }
 
@@ -8821,7 +9351,7 @@ module.exports = function run ($void) {
         return null
       }
     } else if (expr instanceof Tuple$) {
-      // evauate it
+      // evaluate it
       code = expr
     } else if (expr instanceof Symbol$) {
       // resolve it in global space.
@@ -8920,7 +9450,7 @@ module.exports = function evaluate ($void) {
       subject = evaluate(subject, space)
     } // else, the subject is a common value.
 
-    // switch subject to predicate if it's apppliable.
+    // switch subject to predicate if it's applicable.
     var predicate
     if (typeof subject === 'function' && implicitSubject) {
       if (subject.type === $Operator) {
@@ -9524,17 +10054,18 @@ module.exports = function operators$operator ($void) {
     if (!(params instanceof Tuple$) || params.$.length < 1) {
       return [[], $Tuple.empty]
     }
-    var oprs = []
+    var operands = []
     var code = []
     params = params.$
     for (var i = 0; i < params.length; i++) {
       var param = params[i]
       if (param instanceof Symbol$) {
-        oprs.push(param.key)
+        operands.push(param.key)
         code.push(param)
       }
     }
-    return oprs.length < 1 ? [[], $Tuple.empty] : [oprs, new Tuple$(code)]
+    return operands.length > 0 ? [operands, new Tuple$(code)]
+      : [[], $Tuple.empty]
   }
 }
 
@@ -9905,7 +10436,7 @@ module.exports = function space ($void) {
     return space
   }
 
-  // customized the behaviour of the space of an operator
+  // customized the behavior of the space of an operator
   $void.OperatorSpace = OperatorSpace$
   function OperatorSpace$ (parent, origin) {
     // the original context is preferred over global.
@@ -10026,6 +10557,8 @@ function initializeOperators ($void) {
   __webpack_require__(/*! ./operators/import */ "./es/operators/import.js")($void)
   __webpack_require__(/*! ./operators/load */ "./es/operators/load.js")($void)
   __webpack_require__(/*! ./operators/fetch */ "./es/operators/fetch.js")($void)
+
+  __webpack_require__(/*! ./operators/generator */ "./es/operators/generator.js")($void)
 }
 
 module.exports = function start (stdout) {
@@ -10168,7 +10701,7 @@ module.exports = function ($void) {
           beginWaiting('', commentWaiter)
           break
         case ' ':
-        case '\t': // It may spoil well foramtted code.
+        case '\t': // It may spoil well formatted code.
           processWhitespace(c)
           break
         default:
@@ -10239,7 +10772,7 @@ module.exports = function ($void) {
         }
         if (/[\s]/.test(c)) {
           if (stringPadding >= 0) { // padding or padded
-            if (stringPadding === 0) { // pading
+            if (stringPadding === 0) { // padding
               if (pendingText.length > 1) { // avoid a leading whitespace
                 pendingText += ' ' // keeps the first space character.
               }
@@ -10632,7 +11165,7 @@ module.exports = function ($void) {
   })
 
   return {
-    cache: cache, // for mgmt. purpose only.
+    cache: cache, // for management purpose only.
 
     dir: function (url) {
       var offset = url.lastIndexOf('/')
@@ -13479,7 +14012,7 @@ module.exports = g;
 /*! exports provided: name, version, author, license, repository, description, keywords, main, scripts, bin, dependencies, devDependencies, default */
 /***/ (function(module) {
 
-module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.11\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"s-expression\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
+module.exports = JSON.parse("{\"name\":\"eslang\",\"version\":\"1.0.12\",\"author\":{\"email\":\"leevi@nirlstudio.com\",\"name\":\"Leevi Li\"},\"license\":\"MIT\",\"repository\":\"nirlstudio/eslang\",\"description\":\"A simple & expressive script language, like Espresso.\",\"keywords\":[\"es\",\"eslang\",\"espresso\",\"espressolang\",\"espresso-lang\",\"s-expression\",\"script language\",\"programming lang\",\"programming language\"],\"main\":\"index.js\",\"scripts\":{\"test\":\"node . selftest\",\"check\":\"node test/test.js\",\"build\":\"webpack\",\"rebuild\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*; webpack\",\"build-dev\":\"webpack\",\"build-prod\":\"webpack --mode=production\",\"clean\":\"rm -rf dist/www; rm dist/*; rm dist/.cache*\",\"start\":\"webpack-dev-server --mode development\",\"prod\":\"webpack-dev-server --mode production\"},\"bin\":{\"es\":\"bin/es\",\"eslang\":\"bin/eslang\"},\"dependencies\":{\"axios\":\"^0.19.0\",\"colors\":\"^1.3.3\",\"node-localstorage\":\"^1.3.1\"},\"devDependencies\":{\"hooks-webpack-plugin\":\"^1.0.3\",\"html-webpack-plugin\":\"^3.2.0\",\"shelljs\":\"^0.8.3\",\"webpack\":\"^4.36.1\",\"webpack-cli\":\"^3.3.6\",\"webpack-dev-server\":\"^3.7.2\"}}");
 
 /***/ }),
 
@@ -13636,6 +14169,48 @@ module.exports = function ($void) {
       '$env', '$run', '$interpreter'
     ])
 
+    checkStaticOperators('[Espresso / generators] ', [
+      'is', '===', 'is-not', '!==',
+      'equals', '==', 'not-equals', '!=',
+      'compare',
+      'is-empty', 'not-empty',
+      'is-a', 'is-an',
+      'is-not-a', 'is-not-an',
+      'to-code', 'to-string',
+      '>', '>=', '<', '<=',
+      // arithmetic: '-', '++', '--', ...
+      '+=', '-=', '*=', '/=', '%=',
+      // bitwise: '~', ...
+      '&=', '|=', '^=', '<<=', '>>=', '>>>=',
+      // control: ?
+      // general: +, (str +=), (str -=)
+      // logical: not, ...
+      'and', '&&', '&&=', 'or', '||', '||=',
+      '?', '?*', '??',
+      '*'
+    ])
+
+    checkFunctions($, '[Espresso / generator functions] ', [
+      'is', '===', 'is-not', '!==',
+      'equals', '==', 'not-equals', '!=',
+      'compare',
+      'is-empty', 'not-empty',
+      'is-a', 'is-an',
+      'is-not-a', 'is-not-an',
+      'to-code', 'to-string',
+      '>', '>=', '<', '<=',
+      '-', '++', '--',
+      '+=', '-=', '*=', '/=', '%=',
+      '~',
+      '&=', '|=', '^=', '<<=', '>>=', '>>>=',
+      '?',
+      '+',
+      'not', '!',
+      'and', '&&', '&&=', 'or', '||', '||=',
+      '?', '?*', '??',
+      'all', 'both', 'any', 'either', 'not-any', 'neither', 'nor'
+    ])
+
     checkFunctions($, '[Espresso / lib / functions] ', [
       'max', 'min'
     ])
@@ -13665,6 +14240,7 @@ module.exports = function ($void) {
     checkOperators()
     checkControl()
     checkOperations()
+    checkGeneratorAliases()
   }
 
   function checkObjects ($, group, names) {
@@ -13767,6 +14343,9 @@ module.exports = function ($void) {
     check('symbol', indexerOf($.symbol) === $.symbol[':'])
     check('symbol: empty', indexerOf($.symbol.empty) === $.symbol.proto[':'])
 
+    check('tuple', indexerOf($.tuple) === $.tuple[':'])
+    check('tuple: empty', indexerOf($.tuple.empty) === $.tuple.proto[':'])
+
     check('operator', indexerOf($.operator) === $.operator[':'])
     check('operator.empty', indexerOf($.operator.empty()) === $.operator.proto[':'])
 
@@ -13777,8 +14356,11 @@ module.exports = function ($void) {
     check('function: empty', indexerOf($.function.empty()) === $.function.proto[':'])
     check('function: generic', indexerOf(function () {}) === $.function.proto[':'])
 
-    check('array', indexerOf($.iterator.empty) === $.iterator.proto[':'])
-    check('array', indexerOf($.promise.empty) === $.promise.proto[':'])
+    check('iterator', indexerOf($.iterator) === $.iterator[':'])
+    check('iterator: empty', indexerOf($.iterator.empty) === $.iterator.proto[':'])
+
+    check('promise', indexerOf($.promise) === $.promise[':'])
+    check('promise: empty', indexerOf($.promise.empty) === $.promise.proto[':'])
 
     check('array', indexerOf($.array) === $.array[':'])
     check('array: empty', indexerOf($.array.empty()) === $.array.proto[':'])
@@ -13787,6 +14369,10 @@ module.exports = function ($void) {
     check('object', indexerOf($.object) === $.object[':'])
     check('object: empty', indexerOf($.object.empty()) === $.object.proto[':'])
     check('object: generic', indexerOf({}) === $.object.proto[':'])
+
+    check('class', indexerOf($.class) === $.class[':'])
+    check('class: empty', indexerOf($.class.empty()) === $.class.proto[':'])
+    check('instance: empty', indexerOf($.class.empty().empty()) === $.class.proto.proto[':'])
   }
 
   function eval_ (expected, expr, desc) {
@@ -13915,8 +14501,8 @@ module.exports = function ($void) {
 
   function checkOperators () {
     print('\n  - Operators')
-    eval_(1, '(? true 1 0)')
-    eval_(0, '(? false 1 0)')
+    eval_(1, '(if true 1 else 0)')
+    eval_(0, '(if false 1 else 0)')
 
     eval_(110, '(+ 10 100)')
     eval_(-110, '(+ -10 -100)')
@@ -13960,6 +14546,7 @@ module.exports = function ($void) {
     eval_(0, '(if false 1 else 0)')
 
     eval_(10, '(for x in (100 110) (++ i).')
+    eval_(10, '(var i 0)(for (@ 1 2 3 4) (i += _).')
     eval_(99, '(while ((++ i) < 100) i)')
     eval_(100, '(let i 0)(while ((i ++) < 100) i)')
     eval_(100, '(while ((++ i) < 100). i')
@@ -13979,6 +14566,28 @@ module.exports = function ($void) {
 
     eval_(11, '(let summer (@:class add: (= () ((this x) + (this y). (let s (summer of (@ x: 1 y: 10). (s add)')
     eval_(11, '(let summer (@:class type: (@ add: (= (x y ) (+ x y). (summer add 1 10)')
+  }
+
+  function checkGeneratorAliases () {
+    print('\n  - Generator Aliases')
+    function checkAlias (a, b) {
+      check('"' + a + '" is "' + b + '"',
+        Object.is($void.staticOperators[a], $void.staticOperators[b])
+      )
+    }
+
+    checkAlias('is', '===')
+    checkAlias('is-not', '!==')
+
+    checkAlias('equals', '==')
+    checkAlias('not-equals', '!=')
+
+    checkAlias('is-a', 'is-an')
+    checkAlias('is-not-a', 'is-not-an')
+
+    checkAlias('not', '!')
+    checkAlias('and', '&&')
+    checkAlias('or', '||')
   }
 }
 
@@ -14486,20 +15095,20 @@ var pool = []
 var spooling = false
 var panel, input, enter
 
-function enqueue (todo) {
+function enqueue (task) {
   if (pool.length > (MaxLines * 2)) {
     pool = pool.slice(MaxLines)
   }
-  pool.push(todo)
+  pool.push(task)
 }
 
 function drain () {
   if (pool.length < 1) { return }
   setTimeout(function () {
-    var todos = pool.splice(0, DrainBatch)
-    for (var i = 0, len = todos.length; i < len; i++) {
-      var todo = todos[i]
-      todo[0](todo[1], todo[2], true)
+    var tasks = pool.splice(0, DrainBatch)
+    for (var i = 0, len = tasks.length; i < len; i++) {
+      var task = tasks[i]
+      task[0](task[1], task[2], true)
     }
     drain()
   }, MinimalDelay)
