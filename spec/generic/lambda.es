@@ -1,4 +1,4 @@
-(var * (load "share/type" (@ the-type: lambda).
+(var * (load "./share/type" (@ the-type: lambda).
 
 (define "Lambda Common Behaviors" (=> ()
   (define "Identity" (= ()
@@ -65,21 +65,21 @@
     (should "comparing a lambda with itself returns 0." (= ()
       (var l (= x x).
       (assert ($l is-a lambda).
-      (assert 0 ($l compare l).
-      (assert 0 ($(lambda empty) compare (lambda empty).
+      (assert 0 ($l compares-to l).
+      (assert 0 ($(lambda empty) compares-to (lambda empty).
     ).
     (should "comparison of two lambdas returns null." (=> ()
       (var l1 (= () null).
       (var l2 (= () null).
       (assert ($l1 is-a lambda).
       (assert ($l2 is-a lambda).
-      (assert null ($l1 compare l2).
+      (assert null ($l1 compares-to l2).
 
       (let l1 (= x x).
       (let l2 (= x x).
       (assert ($l1 is-a lambda).
       (assert ($l2 is-a lambda).
-      (assert null ($l1 compare l2).
+      (assert null ($l1 compares-to l2).
     ).
   ).
 
@@ -324,10 +324,10 @@
     (assert null (ctx 2).
   ).
   (should "a stambda cannot import another module." (= ()
-    (var mod (=:() (import "test").
+    (var mod (=:() (import "es/test").
     (assert (mod is-an object).
 
-    (let mod (->:() (import "test").
+    (let mod (->:() (import "es/test").
     (assert (mod is null).
   ).
   (should "a stambda has no access to (env)." (= ()

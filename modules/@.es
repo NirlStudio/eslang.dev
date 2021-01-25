@@ -1,7 +1,6 @@
 (fetch
   "io",
-  "restful",
-  "styledout",
+  "styles",
   "test",
   "window"
 ).

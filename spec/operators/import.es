@@ -32,6 +32,14 @@
     (var mod (import "./_module").
     (assert (mod -module-dir:: ends-with "operators").
   ).
+  (should "(import \"module\":: -imported-by) is the original importing module." (=> ()
+    (var mod (import "./_module").
+    (assert (mod -imported-by:: is -module).
+  ).
+  (should "(import \"module\":: -imported-at) is a unix timestamp." (=> ()
+    (var mod (import "./_module").
+    (assert (mod -imported-at:: is-a number).
+  ).
   (should "(import \"module\") returns an object with all exports." (=> ()
     (var mod (import "./_module").
 
@@ -79,68 +87,65 @@
     (assert null p)
     (assert null b)
   ).
-  (define "import modules", (= ()
-    (should "io" (= ()
-      (var mod (import "io").
+  (define "import es modules", (= ()
+    (should "es/io" (= ()
+      (var mod (import "es/io").
       (assert (mod is-an object).
       (assert (mod -module:: ends-with "io.es").
       (assert (mod -module-dir:: ends-with "modules").
     ).
-    (should "restful" (= ()
-      (var mod (import "restful").
+    (should "es/styles" (= ()
+      (var mod (import "es/styles").
       (assert (mod is-an object).
-      (assert (mod -module:: ends-with "restful.es").
+      (assert (mod -module:: ends-with "styles.es").
       (assert (mod -module-dir:: ends-with "modules").
     ).
-    (should "styledout" (= ()
-      (var mod (import "styledout").
-      (assert (mod is-an object).
-      (assert (mod -module:: ends-with "styledout.es").
-      (assert (mod -module-dir:: ends-with "modules").
-    ).
-    (should "test" (= ()
-      (var mod (import "test").
+    (should "es/test" (= ()
+      (var mod (import "es/test").
       (assert (mod is-an object).
       (assert (mod -module:: ends-with "test.es").
       (assert (mod -module-dir:: ends-with "modules").
     ).
-    (should "window" (= ()
-      (var mod (import "window").
+    (if (env "runtime-host":: is "browser") (should "es/window" (= ()
+      (var mod (import "es/window").
       (assert (mod is-an object).
       (assert (mod -module:: ends-with "window.es").
       (assert (mod -module-dir:: ends-with "modules").
+
+      (assert (mod "document":: is-an object).
+      (assert (mod "navigator":: is-an object).
+      (assert (mod "location":: is-an object).
     ).
   ).
   (define "import native modules", (= ()
-    (should "$io" (= ()
-      (var mod (import "$io").
+    (should "$eslang/io" (= ()
+      (var mod (import "$eslang/io").
       (assert (mod is-an object).
-      (assert "$io" (mod -module).
-      (assert null (mod -module-dir).
+      (assert (object is-plain mod).
+      (assert false (object is-generic mod).
     ).
-    (should "$restful" (= ()
-      (var mod (import "$restful").
+    (should "$eslang/path" (= ()
+      (var mod (import "$eslang/path").
       (assert (mod is-an object).
-      (assert "$restful" (mod -module).
-      (assert null (mod -module-dir).
+      (assert false (object is-plain mod).
+      (assert (object is-generic mod).
     ).
-    (should "$shell" (= ()
-      (var mod (import "$shell").
+    (should "$eslang/symbols" (= ()
+      (var mod (import "$eslang/symbols").
       (assert (mod is-an object).
-      (assert "$shell" (mod -module).
-      (assert null (mod -module-dir).
+      (assert (object is-plain mod).
+      (assert false (object is-generic mod).
     ).
-    (should "$symbols" (= ()
-      (var mod (import "$symbols").
+    (should "$eslang/global" (= ()
+      (var mod (import "$eslang/global").
       (assert (mod is-an object).
-      (assert "$symbols" (mod -module).
-      (assert null (mod -module-dir).
-    ).
-    (should "$window" (= ()
-      (var mod (import "$window").
-      (assert (mod is-an object).
-      (assert "$window" (mod -module).
-      (assert null (mod -module-dir).
+      (assert false (object is-plain mod).
+      (assert false (object is-generic mod).
+
+      (assert (mod "setTimeout":: is-a function).
+      (assert (mod "clearTimeout":: is-a function).
+      (assert (mod "setInterval":: is-a function).
+      (assert (mod "clearInterval":: is-a function).
     ).
   ).
 ).

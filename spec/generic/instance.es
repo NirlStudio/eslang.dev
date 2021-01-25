@@ -6,7 +6,7 @@
   roar: (=() ("..." + age).
   hop: (=>() ("hopping" + age).
 ).
-(var * (load "share/type" (@
+(var * (load "./share/type" (@
   the-type: (var cat (@:class type: mammal
     name: "kitty"
     revived: false
@@ -65,7 +65,7 @@
   (define "Ordering" (=> ()
     (should "comparison of an instance with itself returns 0." (=> ()
       (for a in (the-values concat (@:cat) (@:cat))
-        (assert 0 (a compare a).
+        (assert 0 (a compares-to a).
       ).
     ).
     (should "comparison of two different instances return null." (=> ()
@@ -73,7 +73,7 @@
       (for a in values
         (for b in values
           (if (a is-not b)
-            (assert null (a compare b).
+            (assert null (a compares-to b).
       ).
     ).
   ).
@@ -164,7 +164,7 @@
       (var kitty1 (cat of 1 10 1).
       (var kitty2 (cat of 2 20 2).
       (kitty1 "friend" kitty2)
-      (kitty2 "firend" kitty1)
+      (kitty2 "friend" kitty1)
       (assert (kitty1 to-string) ((kitty1 to-code) to-string).
     ).
   ).
@@ -252,47 +252,47 @@
   (define "Ordering" (= ()
     (var cls (@:class
       equals: (=(another) (value == (another value).
-      compare: (=(another) (value - (another value) -1).
+      compares-to: (=(another) (value - (another value) -1).
     ).
     (var inst1 (@:cls value: 8).
     (var inst2 (@:cls value: 8).
     (var inst3 (@:cls value: 7).
     (should "comparison of an instance with itself always returns 0." (=> ()
-      (assert 0 (inst1 compare inst1).
-      (assert 0 (inst2 compare inst2).
-      (assert 0 (inst3 compare inst3).
+      (assert 0 (inst1 compares-to inst1).
+      (assert 0 (inst2 compares-to inst2).
+      (assert 0 (inst3 compares-to inst3).
     ).
     (should "comparison two equivalent instances always returns 0." (=> ()
       (assert (inst1 equals inst2).
-      (assert 0 (inst1 compare inst2).
+      (assert 0 (inst1 compares-to inst2).
 
       (assert (inst2 equals inst1).
-      (assert 0 (inst2 compare inst1).
+      (assert 0 (inst2 compares-to inst1).
     ).
     (should "a positive value will be converted to 1." (=> ()
       (assert (inst1 not-equals inst3).
       (assert false (inst1 equals inst3).
-      (assert 1 (inst1 compare inst3).
+      (assert 1 (inst1 compares-to inst3).
     ).
     (should "a zero value will be kept." (=> ()
-      (assert 0 (inst3 compare inst1).
+      (assert 0 (inst3 compares-to inst1).
     ).
     (should "a negative value will be converted to -1." (=> ()
       (var inst4 (@:cls value: 6).
-      (assert -1 (inst4 compare inst1).
+      (assert -1 (inst4 compares-to inst1).
     ).
     (should "a not-a-number value will be converted to null." (=> ()
       (var inst4 (@:cls value: (number invalid).
-      (assert null (inst4 compare inst1).
-      (assert null (inst1 compare inst4).
+      (assert null (inst4 compares-to inst1).
+      (assert null (inst1 compares-to inst4).
 
       (let inst4 (@:cls value: true).
-      (assert null (inst4 compare inst1).
-      (assert 1 (inst1 compare inst4).
+      (assert null (inst4 compares-to inst1).
+      (assert 1 (inst1 compares-to inst4).
 
       (let inst4 (@:cls value: (@).
-      (assert null (inst4 compare inst1).
-      (assert null (inst1 compare inst4).
+      (assert null (inst4 compares-to inst1).
+      (assert null (inst1 compares-to inst4).
     ).
   ).
 
@@ -362,7 +362,7 @@
         constructor: (= name (this "name" name).
         to-code: (=() (tuple of-plain (`lion) (`of) name).
       ).
-      (var cub (lion of "Sinba").
+      (var cub (lion of "Simba").
       (var code (cub to-code).
       (assert (code is-a tuple).
       (assert 6 (code length).
@@ -371,7 +371,7 @@
       (assert (` lion) (code 2).
       (assert (` name) (code 3).
       (assert (symbol pairing) (code 4).
-      (assert "Sinba" (code 5).
+      (assert "Simba" (code 5).
     ).
     (should "an instance can replace its type before encoding." (=> ()
       (var kitty (@:cat name: "Tom").
@@ -393,10 +393,10 @@
       to-string: (=() ("cat is " + name ", " (arguments join).
     ).
     (var kitty (@:cat name: "Tom").
-    (should "a class can cusomtized its to-string logic." (=> ()
+    (should "a class can customized its to-string logic." (=> ()
       (assert "cat is Tom, " (kitty to-string).
     ).
-    (should "cusomtized to-string can receive extra argument(s) to help formatting." (=> ()
+    (should "customized to-string can receive extra argument(s) to help formatting." (=> ()
       (assert "cat is Tom, Mew!" (kitty to-string "Mew!").
       (assert "cat is Tom, Mew! ..." (kitty to-string "Mew!" "...").
     ).
@@ -629,7 +629,7 @@
       (assert "Bark!" (kitty roar).
     ).
   ).
-  (define "Acess Overridden Members" (=> ()
+  (define "Access Overridden Members" (=> ()
     (var kitty (@:cat
       age: 2
       mew: (=() "Woof!").
@@ -668,7 +668,7 @@
   (define "Abstract/Empty Members" (=> ()
     (should "an abstract member can be indicated by null or an empty lambda or function." (=> ()
       (var base (@:class walk: null run: (lambda empty) fly: (function empty).
-      (var cls (@:class type: bsae
+      (var cls (@:class type: base
         walk: (=() "walking").
       ).
       (var inst (cls default).

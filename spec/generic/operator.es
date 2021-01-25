@@ -1,4 +1,4 @@
-(var * (load "share/type" (@ the-type: operator).
+(var * (load "./share/type" (@ the-type: operator).
 
 (define "Operator Common Behaviors" (=> ()
   (define "Identity" (= ()
@@ -46,21 +46,21 @@
     (should "comparing a operator with itself returns 0." (= ()
       (var op (=? X X).
       (assert ($op is-an operator).
-      (assert 0 ($op compare op).
-      (assert 0 ($(operator empty) compare (operator empty).
+      (assert 0 ($op compares-to op).
+      (assert 0 ($(operator empty) compares-to (operator empty).
     ).
     (should "comparison of two operators returns null." (=> ()
       (var op1 (=? () null).
       (var op2 (=? () null).
       (assert ($op1 is-an operator).
       (assert ($op2 is-an operator).
-      (assert null ($op1 compare op2).
+      (assert null ($op1 compares-to op2).
 
       (let op1 (=? X X).
       (let op2 (=? X X).
       (assert ($op1 is-an operator).
       (assert ($op2 is-an operator).
-      (assert null ($op1 compare op2).
+      (assert null ($op1 compares-to op2).
     ).
   ).
 

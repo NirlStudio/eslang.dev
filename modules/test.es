@@ -5,8 +5,8 @@ const indent-step "  ";
 var indent indent-step;
 
 # import rendering
-const symbols (import "$symbols");
-const (gray, green, red, yellow, underlined) (import "styledout");
+const symbols (import "$eslang/symbols");
+const (gray, green, red, yellow, underline) (import "es/styles");
 
 const sign-passed (=> () (green indent, (symbols passed);
 const sign-failed (=> () (red indent, (symbols failed);
@@ -204,9 +204,9 @@ var ++assertions (=>() (++ assertions);
   print '  $(failure no.)) [ $((failure path) join " / ") ] $(failure behavior)';
   const assertion (failure assertion);
   red '     step-$(assertion step) is expecting';
-  underlined "green", " ", (assertion "expected");
-  red " instead of"; underlined "red", " ", (assertion "real"), "\n";
-  gray "     when asserting"; underlined "gray", " ", (assertion "expr");
+  underline green, " ", (assertion "expected");
+  red " instead of"; underline red, " ", (assertion "real"), "\n";
+  gray "     when asserting"; underline gray, " ", (assertion "expr");
   gray (assertion note:: is-empty:: ? "", (" , for " + (assertion note))), "\n";
 ).
 
