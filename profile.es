@@ -1,5 +1,5 @@
 const path (import "$eslang/path");
-const (get-help, set-help) (import (get set) from "./tools/help");
+const (get-help, add-help) (import (get add) from "./tools/help");
 
 const gray (= text (printf text, "gray");
 const blue (= text (printf text, "blue");
@@ -25,8 +25,8 @@ blue ".echo"; gray ", "; blue ".debug"; gray " and "; blue ".logging";
 gray " are imported.\n";
 
 gray "# functions "; blue "version"; gray ", ";
-blue "describe";
-(export describe (=> it
+blue "desc/describe";
+(export (desc, describe) (=> it
   (if ($it is-an object)
     (object fields-of it:: sort:: for-each (=> p
       print '$p # $(type of ($it:p))';
